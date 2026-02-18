@@ -3,6 +3,7 @@ python3 ast_obfuscator.py ast_obfuscator.py -o /tmp/ast_obfuscator_self_obf.py \
   --profile balanced --level 4 --seed 606 --dynamic-level heavy --passes 2 \
   --no-wrap --string-mode split --string-helpers 4 --call-helpers 4 \
   --value-salt 41 --auto-value-salt \
+  --mt-workers 4 \
   --frontline-redirects --redirect-rate 0.80 --redirect-max 40 --redirect-kinds class,function,variable \
   --attr-rate 0.90 --setattr-rate 0.90 --call-rate 0.90 --builtin-rate 0.90 \
   --condition-rate 0.90 --branch-rate 0.80 --flow-rate 0.80 --loop-rate 0.80 --flow-count 2 \

@@ -32,7 +32,7 @@ This folder contains multiple source scripts, their obfuscated outputs, and deob
 
 - `case06_self_obfuscate/`
   - `config.txt`
-  - recipe to obfuscate `ast_obfuscator.py` itself (outputs go to `/tmp` to avoid huge repo artifacts)
+  - recipe to obfuscate `ast_obfuscator.py` itself (outputs go to `/tmp` to avoid huge repo artifacts, includes `--mt-workers`)
 
 ## Re-generate all examples
 
@@ -55,4 +55,7 @@ python3 ast_obfuscator.py examples/case05_long_redirect_all/obf.py -o examples/c
 
 # self-obfuscation recipe
 bash examples/case06_self_obfuscate/config.txt
+
+# optional tuning (self-obf): try 1/4/8 and keep the fastest for your machine
+# --mt-workers 4
 ```

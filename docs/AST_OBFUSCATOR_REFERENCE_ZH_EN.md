@@ -76,6 +76,7 @@ Resolution order:
 - `--level {1,2,3,4,5}`
 - `--profile {balanced,stealth,max}`
 - `--passes N`
+- `--mt-workers N` (parallel workers for string-obf stage, default `1`)
 - `--order imports,attrs,setattrs,calls,conds,loops,bools,ints,floats,bytes,none,flow`
 
 ### Dynamic method control
@@ -256,6 +257,7 @@ python3 ast_obfuscator.py app.py -o app.obf.py \
 - `--check` 只做 compile 检查，不等于完整行为测试。
 - `--wrap` 会做额外包装（多段 payload、随机解包步骤、轻量 anti-hook 检查），主要提升静态阅读成本，不等于加密壳。
 - 在 `--no-wrap` 场景下，可提高 `--string-helpers` / `--call-helpers` 并使用 `--string-mode split`，增加 helper 分散度与片段重组复杂度。
+- `--mt-workers` 主要加速字符串混淆阶段；建议在较大脚本上实测 2/4/8 后选择最优值（默认 `1`）。
 
 ---
 

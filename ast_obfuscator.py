@@ -12,6 +12,7 @@ Features
 - Transformation order and density (`--order`, `--import-rate`, `--condition-rate`,
   `--branch-rate`, `--loop-rate`, `--attr-rate`, `--flow-rate`, `--flow-count`)
 - Helper multiplicity (`--string-helpers`, `--call-helpers`)
+- Optional multithreaded stage acceleration (`--mt-workers`)
 - Frontline symbol redirects (`--frontline-redirects`, `--redirect-rate`, `--redirect-max`, `--redirect-kinds`)
 - Redirect presets + per-kind resolver modes (`--redirect-all`, `--redirect-class-mode`,
   `--redirect-function-mode`, `--redirect-variable-mode`)
@@ -32,6 +33,7 @@ import ast
 import base64
 import builtins
 import copy
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -206,6 +208,7 @@ class ObfuscationConfig:
     seed: int | None
     value_salt: int
     auto_value_salt: bool
+    mt_workers: int
     emit_map: Path | None
     emit_meta: Path | None
     meta_include_source: bool
@@ -604,6 +607,40 @@ class StringObfuscator(ast.NodeTransformer):
             return self._split_expr(value)
         return self._leaf_expr(value, mode)
 
+    def transform(self, tree: ast.AST, mt_workers: int = 1, seed_base: int = 0) -> ast.AST:
+        if mt_workers <= 1:
+            return self.visit(tree)
+
+        collector = StringLiteralCollector(self.keep_docstrings)
+        collector.visit(tree)
+        if not collector.targets:
+            return tree
+
+        jobs = [
+            (
+                idx,
+                node.value,
+                id(node),
+                self.helper_specs,
+                self.keep_docstrings,
+                self.chunk_min,
+                self.chunk_max,
+                self.mode,
+                self.value_salt,
+                seed_base,
+            )
+            for idx, node in enumerate(collector.targets)
+        ]
+        replacements: dict[int, ast.AST]
+        if len(jobs) < 48:
+            replacements = dict(_string_obf_worker(item) for item in jobs)
+        else:
+            workers = max(1, min(mt_workers, len(jobs) // 32 or 1))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                replacements = dict(pool.map(_string_obf_worker, jobs))
+        self.changed += len(replacements)
+        return StringReplacementApplier(replacements).visit(tree)
+
     def _visit_body(self, body: list[ast.stmt]) -> list[ast.stmt]:
         out: list[ast.stmt] = []
         for idx, stmt in enumerate(body):
@@ -669,6 +706,108 @@ class StringObfuscator(ast.NodeTransformer):
             for part in node.values
         ]
         return node
+
+
+class StringLiteralCollector(ast.NodeVisitor):
+    def __init__(self, keep_docstrings: bool) -> None:
+        self.keep_docstrings = keep_docstrings
+        self.targets: list[ast.Constant] = []
+
+    def _visit_body(self, body: list[ast.stmt], force_keep_docstring: bool = False) -> None:
+        for idx, stmt in enumerate(body):
+            if (
+                idx == 0
+                and (self.keep_docstrings or force_keep_docstring)
+                and isinstance(stmt, ast.Expr)
+                and isinstance(stmt.value, ast.Constant)
+                and isinstance(stmt.value.value, str)
+            ):
+                continue
+            self.visit(stmt)
+
+    def visit_Module(self, node: ast.Module) -> None:
+        force_keep_docstring = (
+            bool(node.body)
+            and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant)
+            and isinstance(node.body[0].value.value, str)
+            and any(
+                isinstance(stmt, ast.ImportFrom) and stmt.level == 0 and stmt.module == "__future__"
+                for stmt in node.body[1:]
+            )
+        )
+        self._visit_body(node.body, force_keep_docstring)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        for dec in node.decorator_list:
+            self.visit(dec)
+        if node.returns:
+            self.visit(node.returns)
+        self._visit_body(node.body)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.visit_FunctionDef(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        for base in node.bases:
+            self.visit(base)
+        for kw in node.keywords:
+            self.visit(kw)
+        for dec in node.decorator_list:
+            self.visit(dec)
+        self._visit_body(node.body)
+
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> None:
+        for part in node.values:
+            if isinstance(part, ast.FormattedValue):
+                self.visit(part)
+
+    def visit_Constant(self, node: ast.Constant) -> None:
+        if isinstance(node.value, str) and node.value:
+            self.targets.append(node)
+
+
+class StringReplacementApplier(ast.NodeTransformer):
+    def __init__(self, replacements: dict[int, ast.AST]) -> None:
+        self.replacements = replacements
+
+    def visit_JoinedStr(self, node: ast.JoinedStr) -> ast.AST:
+        node.values = [self.visit(part) if isinstance(part, ast.FormattedValue) else part for part in node.values]
+        return node
+
+    def visit_Constant(self, node: ast.Constant) -> ast.AST:
+        repl = self.replacements.get(id(node))
+        if repl is None:
+            return node
+        return ast.copy_location(copy.deepcopy(repl), node)
+
+
+def _string_obf_worker(
+    item: tuple[
+        int,
+        str,
+        int,
+        list[tuple[str, dict[str, int]]],
+        bool,
+        int,
+        int,
+        str,
+        int,
+        int,
+    ],
+) -> tuple[int, ast.AST]:
+    idx, value, node_id, helper_specs, keep_docstrings, chunk_min, chunk_max, mode, value_salt, seed_base = item
+    mix = ((seed_base & 0xFFFFFFFFFFFFFFFF) ^ (idx * 0x9E3779B185EBCA87) ^ len(value)) & 0xFFFFFFFFFFFFFFFF
+    obf = StringObfuscator(
+        helper_specs,
+        random.Random(mix),
+        keep_docstrings,
+        chunk_min,
+        chunk_max,
+        mode,
+        value_salt,
+    )
+    return node_id, obf._obf_expr(value)
 
 
 class IntObfuscator(ast.NodeTransformer):
@@ -2498,6 +2637,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Derive an extra source-coupled salt and mix it with --value-salt",
     )
+    parser.add_argument(
+        "--mt-workers",
+        type=int,
+        default=1,
+        help="Parallel worker threads for selected heavy stages (>=1)",
+    )
     parser.add_argument("--emit-map", type=Path, default=None, help="Write rename map as JSON")
     parser.add_argument("--emit-meta", type=Path, default=None, help="Write obfumeta JSON metadata")
     parser.add_argument(
@@ -3045,6 +3190,8 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         raise ValueError("--string-helpers must be >= 1")
     if call_helpers <= 0:
         raise ValueError("--call-helpers must be >= 1")
+    if args.mt_workers <= 0:
+        raise ValueError("--mt-workers must be >= 1")
     if args.string_chunk_min <= 0 or args.string_chunk_max <= 0:
         raise ValueError("--string chunk sizes must be >= 1")
     if args.string_chunk_min > args.string_chunk_max:
@@ -3142,6 +3289,7 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         seed=args.seed,
         value_salt=args.value_salt,
         auto_value_salt=args.auto_value_salt,
+        mt_workers=args.mt_workers,
         emit_map=args.emit_map,
         emit_meta=args.emit_meta,
         meta_include_source=args.meta_include_source,
@@ -4087,7 +4235,7 @@ def obfuscate_source(
             config.string_mode,
             value_salt,
         )
-        tree = string_obf.visit(tree)
+        tree = string_obf.transform(tree, config.mt_workers, rng.randint(0, 2**31 - 1))
         stats.strings += string_obf.changed
         if string_obf.changed > 0 and isinstance(tree, ast.Module):
             insertion_specs = list(helper_specs)
@@ -4340,6 +4488,7 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
         "flow_count": config.flow_count,
         "order": list(config.transform_order),
         "seed": config.seed,
+        "mt_workers": config.mt_workers,
         "value_salt": config.value_salt,
         "auto_value_salt": config.auto_value_salt,
     }
@@ -4906,6 +5055,7 @@ def explain_config(config: ObfuscationConfig) -> None:
         f"builtin_rate={config.builtin_rate:.2f}, flow_rate={config.flow_rate:.2f}, "
         f"cond_rate={config.condition_rate:.2f}, branch_rate={config.branch_rate:.2f}, "
         f"loop_rate={config.loop_rate:.2f}, flow_count={config.flow_count}, "
+        f"mt_workers={config.mt_workers}, "
         f"str_chunks={config.string_chunk_min}-{config.string_chunk_max}, "
         f"str_helpers={config.string_helpers}, call_helpers={config.call_helpers}, "
         f"redirects={config.frontline_redirects}, redirect_rate={config.redirect_rate:.2f}, "
