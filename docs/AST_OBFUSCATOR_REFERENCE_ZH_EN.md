@@ -110,11 +110,13 @@ Resolution order:
 - `--none-mode {mixed,lambda,ifexpr}`
 - `--attr-mode {mixed,getattr,builtins,attrgetter,lambda}`
 - `--setattr-mode {mixed,setattr,builtins,lambda}`
-- `--call-mode {mixed,wrap,lambda,factory,eval}`
+- `--call-mode {mixed,wrap,lambda,factory,thunk,eval}`
 - `--builtin-mode {mixed,alias,getattr,globals}`
 - `--import-mode {mixed,importlib,builtins,dunder}`
 - `--condition-mode {mixed,double_not,ifexp,bool_call,lambda_call,tuple_pick}`
 - `--loop-mode {mixed,guard,iterator}`
+- `--value-salt INT` (mix user salt into xor-like literal encoding)
+- `--[no-]auto-value-salt` (derive extra source-coupled salt)
 
 ### Rates / density
 - `--import-rate 0.0..1.0`
@@ -156,7 +158,7 @@ Resolution order:
 ### Method families
 - `attr`: `getattr`, `builtins_getattr`, `operator_attrgetter`, `lambda_getattr`, `globals_getattr`, `locals_getattr`
 - `setattr`: `setattr`, `delattr`, `builtins_setattr`, `builtins_delattr`, `lambda_setattr`, `lambda_delattr`
-- `call`: `helper_wrap`, `lambda_wrap`, `factory_lambda_call`, `builtins_eval_call`
+- `call`: `helper_wrap`, `lambda_wrap`, `factory_lambda_call`, `thunk_wrap`, `builtins_eval_call`
 - `builtin`: `alias`, `builtins_getattr_alias`, `globals_lookup`
 - `import`: `importlib_import_module`, `builtins_import`, `dunder_import_module`
 
@@ -190,8 +192,12 @@ python3 ast_obfuscator.py in.py -o out.py \
 - `--meta-minimal` drops source payload, rename_map, and helper_hints together to reduce metadata leakage.
 - You can omit `rename_map` from metadata (`--meta-omit-rename-map`) to reduce metadata leakage, but this weakens best-effort restoration.
 - You can also omit helper hints (`--meta-omit-helper-hints`) to further reduce deobf guidance in metadata.
-- `obfumeta` now stores helper hints (string helper mode tags / call helper names) so deobfuscation can track randomized helper signatures.
+- `obfumeta` now stores helper hints (string helper mode tags/salt + call helper names) so deobfuscation can track randomized helper signatures.
 - `best-effort`: attempts partial restoration (rename-map based) and prints warnings.
+
+### Named args / 具名参数
+- EN: Rename pass auto-preserves keyword argument names used in call sites to avoid breaking `fn(seed=...)` patterns.
+- 中文：重命名阶段会自动保留调用点中的具名参数名，避免 `fn(seed=...)` 这类调用被破坏。
 
 ---
 

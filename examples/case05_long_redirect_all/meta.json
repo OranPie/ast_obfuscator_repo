@@ -2,6 +2,7 @@
   "config": {
     "attr_mode": "mixed",
     "attr_rate": 1.0,
+    "auto_value_salt": true,
     "bool_mode": "mixed",
     "branch_rate": 0.9,
     "builtin_mode": "mixed",
@@ -29,7 +30,8 @@
       "call": [
         "helper_wrap",
         "lambda_wrap",
-        "factory_lambda_call"
+        "factory_lambda_call",
+        "thunk_wrap"
       ],
       "import": [
         "importlib_import_module",
@@ -130,27 +132,28 @@
       "chunk_min": 1,
       "helpers": 5,
       "mode": "split"
-    }
+    },
+    "value_salt": 77
   },
-  "created_utc": "2026-02-18T08:18:41.079020+00:00",
+  "created_utc": "2026-02-18T08:41:47.779387+00:00",
   "format": "obfumeta-v2",
   "input_sha256": "3e99bab81433069a31d6fcb51841f0b97cb8dfe62861157bb3a8ff5377796873",
-  "output_sha256": "815dd4282cc5f176cde8999588462de44baa45980a65801f39290814a53ccf18",
+  "output_sha256": "014c9ac91e75a5704b0629cc60a4c71a8b68abf43beba7415f6783eda175143c",
   "stats": {
-    "attrs": 738,
-    "bools": 150,
-    "branch_extensions": 186,
-    "builtins": 2005,
+    "attrs": 739,
+    "bools": 158,
+    "branch_extensions": 191,
+    "builtins": 1518,
     "bytes": 0,
-    "calls": 5482,
-    "conditions": 368,
+    "calls": 12408,
+    "conditions": 377,
     "floats": 21,
-    "flow_blocks": 96,
+    "flow_blocks": 93,
     "imports": 7,
-    "ints": 15302,
+    "ints": 17299,
     "junk_functions": 4,
-    "loops": 7,
-    "none": 12,
+    "loops": 9,
+    "none": 80,
     "redirects": 17,
     "renamed": 58,
     "setattrs": 5,

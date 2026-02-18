@@ -84,6 +84,7 @@ AVAILABLE_METHODS: dict[str, tuple[str, ...]] = {
         "helper_wrap",
         "lambda_wrap",
         "factory_lambda_call",
+        "thunk_wrap",
         "builtins_eval_call",
     ),
     "builtin": (
@@ -124,7 +125,7 @@ DYNAMIC_LEVEL_DEFAULTS: dict[str, dict[str, tuple[str, ...]]] = {
             "lambda_setattr",
             "lambda_delattr",
         ),
-        "call": ("helper_wrap", "lambda_wrap", "factory_lambda_call"),
+        "call": ("helper_wrap", "lambda_wrap", "factory_lambda_call", "thunk_wrap"),
         "builtin": ("alias", "builtins_getattr_alias", "globals_lookup"),
         "import": ("importlib_import_module", "builtins_import", "dunder_import_module"),
     },
@@ -203,6 +204,8 @@ class ObfuscationConfig:
     preserve_names: set[str]
     preserve_attrs: set[str]
     seed: int | None
+    value_salt: int
+    auto_value_salt: bool
     emit_map: Path | None
     emit_meta: Path | None
     meta_include_source: bool
@@ -456,6 +459,7 @@ class StringObfuscator(ast.NodeTransformer):
         chunk_min: int,
         chunk_max: int,
         mode: str,
+        value_salt: int = 0,
     ) -> None:
         self.helper_specs = helper_specs
         self.rng = rng
@@ -463,6 +467,7 @@ class StringObfuscator(ast.NodeTransformer):
         self.chunk_min = max(1, chunk_min)
         self.chunk_max = max(self.chunk_min, chunk_max)
         self.mode = mode
+        self.value_salt = value_salt & 0xFF
         self.changed = 0
 
     def _pick_helper(self) -> tuple[str, dict[str, int]]:
@@ -479,7 +484,7 @@ class StringObfuscator(ast.NodeTransformer):
             step = self.rng.randint(lo, hi)
             part = value[idx : idx + step]
             key = self.rng.randint(1, 255)
-            chunks.append((key, [ord(ch) ^ key for ch in part]))
+            chunks.append((key, [ord(ch) ^ key ^ self.value_salt for ch in part]))
             idx += step
         return chunks
 
@@ -650,9 +655,10 @@ class StringObfuscator(ast.NodeTransformer):
 
 
 class IntObfuscator(ast.NodeTransformer):
-    def __init__(self, rng: random.Random, mode: str) -> None:
+    def __init__(self, rng: random.Random, mode: str, value_salt: int = 0) -> None:
         self.rng = rng
         self.mode = mode
+        self.value_salt = value_salt & 0xFF
         self.changed = 0
 
     def visit_Constant(self, node: ast.Constant) -> ast.AST:
@@ -667,9 +673,9 @@ class IntObfuscator(ast.NodeTransformer):
         if mode == "xor":
             key = self.rng.randint(1, 2**15)
             expr: ast.expr = ast.BinOp(
-                left=ast.Constant(value ^ key),
+                left=ast.Constant(value ^ key ^ self.value_salt),
                 op=ast.BitXor(),
-                right=ast.Constant(key),
+                right=ast.Constant(key ^ self.value_salt),
             )
         elif mode == "arith":
             key = self.rng.randint(1, 1000)
@@ -751,9 +757,10 @@ class FloatObfuscator(ast.NodeTransformer):
 
 
 class BytesObfuscator(ast.NodeTransformer):
-    def __init__(self, rng: random.Random, mode: str) -> None:
+    def __init__(self, rng: random.Random, mode: str, value_salt: int = 0) -> None:
         self.rng = rng
         self.mode = mode
+        self.value_salt = value_salt & 0xFF
         self.changed = 0
 
     def _leaf_expr(self, data: bytes, mode: str) -> ast.expr:
@@ -766,14 +773,14 @@ class BytesObfuscator(ast.NodeTransformer):
             )
         else:
             key = self.rng.randint(1, 255)
-            encoded = [ast.Constant(v ^ key) for v in data]
+            encoded = [ast.Constant(v ^ key ^ self.value_salt) for v in data]
             target = ast.Name(id="_b", ctx=ast.Store())
             source = ast.Tuple(elts=encoded, ctx=ast.Load())
             gen = ast.GeneratorExp(
                 elt=ast.BinOp(
                     left=ast.Name(id="_b", ctx=ast.Load()),
                     op=ast.BitXor(),
-                    right=ast.Constant(key),
+                    right=ast.Constant(key ^ self.value_salt),
                 ),
                 generators=[ast.comprehension(target=target, iter=source, ifs=[], is_async=0)],
             )
@@ -1162,43 +1169,78 @@ def build_dead_noop_expr(rng: random.Random) -> ast.expr:
 
 
 def build_always_false_test(rng: random.Random) -> ast.expr:
-    style = rng.choice(("object_identity", "double_neg_obj", "lambda_false"))
-    if style == "double_neg_obj":
-        return ast.UnaryOp(
-            op=ast.Not(),
-            operand=ast.UnaryOp(
-                op=ast.Not(),
-                operand=ast.Compare(
-                    left=ast.Call(func=ast.Name(id="object", ctx=ast.Load()), args=[], keywords=[]),
-                    ops=[ast.Is()],
-                    comparators=[ast.Call(func=ast.Name(id="object", ctx=ast.Load()), args=[], keywords=[])],
-                ),
+    style = rng.choice(("xor_compare", "len_negative", "tuple_order", "contra_bool", "lambda_none"))
+    if style == "xor_compare":
+        base = rng.randint(1000, 9000)
+        key = rng.randint(1, 255)
+        gap = rng.randint(1, 19)
+        return ast.Compare(
+            left=ast.BinOp(
+                left=ast.BinOp(left=ast.Constant(base ^ key), op=ast.BitXor(), right=ast.Constant(key)),
+                op=ast.BitXor(),
+                right=ast.Constant(0),
             ),
+            ops=[ast.Eq()],
+            comparators=[ast.Constant(base + gap)],
         )
-    if style == "lambda_false":
-        arg_name = random_local_identifier(rng)
-        return ast.Call(
-            func=ast.Lambda(
-                args=ast.arguments(
-                    posonlyargs=[],
-                    args=[ast.arg(arg=arg_name)],
-                    kwonlyargs=[],
-                    kw_defaults=[],
-                    defaults=[],
-                ),
-                body=ast.Compare(
-                    left=ast.Name(id=arg_name, ctx=ast.Load()),
-                    ops=[ast.Is()],
-                    comparators=[ast.Call(func=ast.Name(id="object", ctx=ast.Load()), args=[], keywords=[])],
-                ),
+    if style == "len_negative":
+        values = [ast.Constant(rng.randint(10, 999)) for _ in range(rng.randint(2, 5))]
+        return ast.Compare(
+            left=ast.Call(
+                func=ast.Name(id="len", ctx=ast.Load()),
+                args=[ast.Tuple(elts=values, ctx=ast.Load())],
+                keywords=[],
             ),
-            args=[ast.Call(func=ast.Name(id="object", ctx=ast.Load()), args=[], keywords=[])],
-            keywords=[],
+            ops=[ast.Lt()],
+            comparators=[ast.Constant(0)],
         )
-    return ast.Compare(
-        left=ast.Call(func=ast.Name(id="object", ctx=ast.Load()), args=[], keywords=[]),
-        ops=[ast.Is()],
-        comparators=[ast.Call(func=ast.Name(id="object", ctx=ast.Load()), args=[], keywords=[])],
+    if style == "tuple_order":
+        base = rng.randint(50, 500)
+        delta = rng.randint(1, 25)
+        pair = ast.Tuple(elts=[ast.Constant(base), ast.Constant(base + delta)], ctx=ast.Load())
+        return ast.Compare(
+            left=ast.Subscript(value=pair, slice=ast.Constant(0), ctx=ast.Load()),
+            ops=[ast.Gt()],
+            comparators=[ast.Subscript(value=copy.deepcopy(pair), slice=ast.Constant(1), ctx=ast.Load())],
+        )
+    if style == "contra_bool":
+        a = rng.randint(200, 1200)
+        b = rng.randint(5000, 9500)
+        return ast.BoolOp(
+            op=ast.And(),
+            values=[
+                ast.Compare(left=ast.Constant(a), ops=[ast.Eq()], comparators=[ast.Constant(a)]),
+                ast.Compare(left=ast.Constant(b), ops=[ast.NotEq()], comparators=[ast.Constant(b)]),
+            ],
+        )
+    arg_name = random_local_identifier(rng)
+    return ast.Call(
+        func=ast.Lambda(
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg=arg_name)],
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=ast.Compare(
+                left=ast.Name(id=arg_name, ctx=ast.Load()),
+                ops=[ast.Is()],
+                comparators=[ast.Constant(None)],
+            ),
+        ),
+        args=[ast.Call(func=ast.Name(id="object", ctx=ast.Load()), args=[], keywords=[])],
+        keywords=[],
+    )
+
+
+def _is_object_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "object"
+        and not node.args
+        and not node.keywords
     )
 
 
@@ -1209,13 +1251,98 @@ def looks_like_object_identity_false_test(node: ast.AST) -> bool:
         and isinstance(node.ops[0], ast.Is)
         and len(node.comparators) == 1
         and isinstance(node.left, ast.Call)
-        and isinstance(node.left.func, ast.Name)
-        and node.left.func.id == "object"
-        and isinstance(node.comparators[0], ast.Call)
-        and isinstance(node.comparators[0].func, ast.Name)
-        and node.comparators[0].func.id == "object"
+        and _is_object_call(node.left)
+        and _is_object_call(node.comparators[0])
     ):
         return True
+    if (
+        isinstance(node, ast.BoolOp)
+        and isinstance(node.op, ast.And)
+        and len(node.values) == 2
+        and all(isinstance(item, ast.Compare) for item in node.values)
+    ):
+        first = node.values[0]
+        second = node.values[1]
+        assert isinstance(first, ast.Compare)
+        assert isinstance(second, ast.Compare)
+        if (
+            len(first.ops) == 1
+            and len(first.comparators) == 1
+            and isinstance(first.ops[0], ast.Eq)
+            and isinstance(first.left, ast.Constant)
+            and isinstance(first.comparators[0], ast.Constant)
+            and first.left.value == first.comparators[0].value
+            and len(second.ops) == 1
+            and len(second.comparators) == 1
+            and isinstance(second.ops[0], ast.NotEq)
+            and isinstance(second.left, ast.Constant)
+            and isinstance(second.comparators[0], ast.Constant)
+            and second.left.value == second.comparators[0].value
+        ):
+            return True
+    if (
+        isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], ast.Lt)
+        and len(node.comparators) == 1
+        and isinstance(node.comparators[0], ast.Constant)
+        and node.comparators[0].value == 0
+        and isinstance(node.left, ast.Call)
+        and isinstance(node.left.func, ast.Name)
+        and node.left.func.id == "len"
+        and len(node.left.args) == 1
+        and isinstance(node.left.args[0], ast.Tuple)
+        and all(isinstance(item, ast.Constant) for item in node.left.args[0].elts)
+    ):
+        return True
+    if (
+        isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], ast.Eq)
+        and len(node.comparators) == 1
+        and isinstance(node.comparators[0], ast.Constant)
+        and isinstance(node.comparators[0].value, int)
+        and isinstance(node.left, ast.BinOp)
+        and isinstance(node.left.op, ast.BitXor)
+        and isinstance(node.left.right, ast.Constant)
+        and node.left.right.value == 0
+        and isinstance(node.left.left, ast.BinOp)
+        and isinstance(node.left.left.op, ast.BitXor)
+        and isinstance(node.left.left.left, ast.Constant)
+        and isinstance(node.left.left.left.value, int)
+        and isinstance(node.left.left.right, ast.Constant)
+        and isinstance(node.left.left.right.value, int)
+    ):
+        base = node.left.left.left.value ^ node.left.left.right.value
+        if node.comparators[0].value != base:
+            return True
+    if (
+        isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], ast.Gt)
+        and len(node.comparators) == 1
+        and isinstance(node.left, ast.Subscript)
+        and isinstance(node.comparators[0], ast.Subscript)
+        and isinstance(node.left.value, ast.Tuple)
+        and isinstance(node.comparators[0].value, ast.Tuple)
+        and len(node.left.value.elts) == 2
+        and len(node.comparators[0].value.elts) == 2
+        and isinstance(node.left.slice, ast.Constant)
+        and isinstance(node.comparators[0].slice, ast.Constant)
+        and node.left.slice.value == 0
+        and node.comparators[0].slice.value == 1
+        and isinstance(node.left.value.elts[0], ast.Constant)
+        and isinstance(node.left.value.elts[1], ast.Constant)
+        and isinstance(node.comparators[0].value.elts[0], ast.Constant)
+        and isinstance(node.comparators[0].value.elts[1], ast.Constant)
+    ):
+        left_a = node.left.value.elts[0].value
+        left_b = node.left.value.elts[1].value
+        right_a = node.comparators[0].value.elts[0].value
+        right_b = node.comparators[0].value.elts[1].value
+        if left_a == right_a and left_b == right_b and isinstance(left_a, int) and isinstance(left_b, int):
+            if left_a < left_b:
+                return True
     if (
         isinstance(node, ast.UnaryOp)
         and isinstance(node.op, ast.Not)
@@ -1232,6 +1359,15 @@ def looks_like_object_identity_false_test(node: ast.AST) -> bool:
         and isinstance(node.func.body.left, ast.Name)
         and node.func.body.left.id == node.func.args.args[0].arg
     ):
+        if (
+            len(node.func.body.ops) == 1
+            and isinstance(node.func.body.ops[0], ast.Is)
+            and len(node.func.body.comparators) == 1
+            and isinstance(node.func.body.comparators[0], ast.Constant)
+            and node.func.body.comparators[0].value is None
+            and _is_object_call(node.args[0])
+        ):
+            return True
         return looks_like_object_identity_false_test(node.func.body)
     return False
 
@@ -1557,6 +1693,18 @@ class CallObfuscator(ast.NodeTransformer):
         self.changed = 0
         self.used_helpers: set[str] = set()
 
+    def _contains_zero_arg_super(self, node: ast.AST) -> bool:
+        for child in ast.walk(node):
+            if (
+                isinstance(child, ast.Call)
+                and isinstance(child.func, ast.Name)
+                and child.func.id == "super"
+                and not child.args
+                and not child.keywords
+            ):
+                return True
+        return False
+
     def _triple_names(self) -> tuple[str, str, str]:
         names: list[str] = []
         while len(names) < 3:
@@ -1647,12 +1795,37 @@ class CallObfuscator(ast.NodeTransformer):
         )
         return ast.Call(func=factory, args=[func, args_tuple, kwargs_dict], keywords=[])
 
+    def _thunk_wrap(self, func: ast.expr, args: list[ast.expr], keywords: list[ast.keyword]) -> ast.expr:
+        thunk_name = random_local_identifier(self.rng)
+        invoker = ast.Lambda(
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg=thunk_name)],
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=ast.Call(func=ast.Name(id=thunk_name, ctx=ast.Load()), args=[], keywords=[]),
+        )
+        thunk = ast.Lambda(
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[],
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=ast.Call(func=func, args=args, keywords=keywords),
+        )
+        return ast.Call(func=invoker, args=[thunk], keywords=[])
+
     def _pick_method(self) -> str:
         explicit_map = {
             "wrap": "helper_wrap",
             "lambda": "lambda_wrap",
             "eval": "builtins_eval_call",
             "factory": "factory_lambda_call",
+            "thunk": "thunk_wrap",
         }
         if self.mode in explicit_map:
             return explicit_map[self.mode]
@@ -1671,18 +1844,26 @@ class CallObfuscator(ast.NodeTransformer):
             return node
         if isinstance(node.func, ast.Name) and node.func.id in self.helper_names:
             return node
-        if any(isinstance(arg, ast.Starred) for arg in node.args):
-            return node
-        if any(kw.arg is None for kw in node.keywords):
-            return node
 
         method = self._pick_method()
+        has_starred = any(isinstance(arg, ast.Starred) for arg in node.args)
+        has_unpack_kwargs = any(kw.arg is None for kw in node.keywords)
+        if (has_starred or has_unpack_kwargs) and method != "thunk_wrap":
+            if "thunk_wrap" in self.methods or self.mode == "thunk":
+                method = "thunk_wrap"
+            else:
+                return node
+        if method == "thunk_wrap" and self._contains_zero_arg_super(node):
+            return node
+
         if method == "lambda_wrap":
             replaced = self._lambda_wrap(node.func, node.args, node.keywords)
         elif method == "builtins_eval_call":
             replaced = self._eval_wrap(node.func, node.args, node.keywords)
         elif method == "factory_lambda_call":
             replaced = self._factory_lambda_wrap(node.func, node.args, node.keywords)
+        elif method == "thunk_wrap":
+            replaced = self._thunk_wrap(node.func, node.args, node.keywords)
         else:
             helper_name = self._pick_helper_name()
             self.used_helpers.add(helper_name)
@@ -2138,7 +2319,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--call-mode",
-        choices=("mixed", "wrap", "lambda", "factory", "eval"),
+        choices=("mixed", "wrap", "lambda", "factory", "thunk", "eval"),
         default="mixed",
         help="Call replacement style",
     )
@@ -2286,6 +2467,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--keep-docstrings", action="store_true", help="Keep docstrings intact")
     parser.add_argument("--seed", type=int, default=None, help="Deterministic random seed")
+    parser.add_argument(
+        "--value-salt",
+        type=int,
+        default=0,
+        help="User-controlled integer salt mixed into xor-style value encodings",
+    )
+    parser.add_argument(
+        "--auto-value-salt",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Derive an extra source-coupled salt and mix it with --value-salt",
+    )
     parser.add_argument("--emit-map", type=Path, default=None, help="Write rename map as JSON")
     parser.add_argument("--emit-meta", type=Path, default=None, help="Write obfumeta JSON metadata")
     parser.add_argument(
@@ -2636,6 +2829,7 @@ def apply_explicit_method_mode(config_methods: dict[str, set[str]], args: argpar
         "wrap": ("helper_wrap",),
         "lambda": ("lambda_wrap",),
         "factory": ("factory_lambda_call",),
+        "thunk": ("thunk_wrap",),
         "eval": ("builtins_eval_call",),
     }
     if args.call_mode in call_map:
@@ -2927,6 +3121,8 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         preserve_names=preserve_names,
         preserve_attrs=preserve_attrs,
         seed=args.seed,
+        value_salt=args.value_salt,
+        auto_value_salt=args.auto_value_salt,
         emit_map=args.emit_map,
         emit_meta=args.emit_meta,
         meta_include_source=args.meta_include_source,
@@ -2974,6 +3170,17 @@ def collect_bound_identifiers(tree: ast.AST) -> set[str]:
                 if alias.name != "*":
                     bound.add(alias.asname or alias.name)
     return bound
+
+
+def collect_keyword_argument_names(tree: ast.AST) -> set[str]:
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        for kw in node.keywords:
+            if isinstance(kw.arg, str) and kw.arg.isidentifier() and not keyword.iskeyword(kw.arg):
+                names.add(kw.arg)
+    return names
 
 
 def collect_builtin_loads(tree: ast.AST, preserve_names: set[str]) -> list[str]:
@@ -3320,13 +3527,32 @@ def apply_frontline_redirects(
     return tree, len(redirect_map)
 
 
+def build_mask_expr(value: int, rng: random.Random) -> str:
+    value &= 0xFF
+    style = rng.choice(("direct", "xor", "addsub", "nested_xor"))
+    if style == "xor":
+        key = rng.randint(1, 255)
+        return f"({value ^ key} ^ {key})"
+    if style == "addsub":
+        bump = rng.randint(1, 120)
+        return f"(({value + bump}) - {bump})"
+    if style == "nested_xor":
+        k1 = rng.randint(1, 255)
+        k2 = rng.randint(1, 255)
+        return f"(({(value ^ k1) ^ k2} ^ {k2}) ^ {k1})"
+    return str(value)
+
+
 def build_string_helper(
     name: str,
     mode_tags: dict[str, int],
     rng: random.Random,
+    value_salt: int,
 ) -> ast.FunctionDef:
     mode_arg = random_local_identifier(rng)
     payload_arg = random_local_identifier(rng)
+    salt_name = random_local_identifier(rng)
+    salt_expr = build_mask_expr(value_salt, rng)
     variant = rng.choice(("if_chain", "dispatch"))
     if variant == "dispatch":
         mode_copy = random_local_identifier(rng)
@@ -3335,10 +3561,11 @@ def build_string_helper(
         helper_source = (
             f"def {name}({mode_arg}, {payload_arg}):\n"
             "    import base64\n"
+            f"    {salt_name} = {salt_expr}\n"
             f"    {mode_copy} = {mode_arg}\n"
             f"    {payload_copy} = {payload_arg}\n"
             f"    {table_name} = {{\n"
-            f"        {mode_tags['xor']}: lambda _p: \"\".join(\"\".join(chr(c ^ key) for c in data) for key, data in _p),\n"
+            f"        {mode_tags['xor']}: lambda _p: \"\".join(\"\".join(chr(c ^ key ^ {salt_name}) for c in data) for key, data in _p),\n"
             f"        {mode_tags['b85']}: lambda _p: base64.b85decode(_p.encode(\"ascii\")).decode(\"utf-8\"),\n"
             f"        {mode_tags['reverse']}: lambda _p: _p[::-1],\n"
             "    }\n"
@@ -3347,8 +3574,9 @@ def build_string_helper(
     else:
         helper_source = (
             f"def {name}({mode_arg}, {payload_arg}):\n"
+            f"    {salt_name} = {salt_expr}\n"
             f"    if {mode_arg} == {mode_tags['xor']}:\n"
-            "        return \"\".join(\"\".join(chr(c ^ key) for c in data) for key, data in payload)\n"
+            f"        return \"\".join(\"\".join(chr(c ^ key ^ {salt_name}) for c in data) for key, data in payload)\n"
             f"    if {mode_arg} == {mode_tags['b85']}:\n"
             "        import base64\n"
             f"        return base64.b85decode({payload_arg}.encode(\"ascii\")).decode(\"utf-8\")\n"
@@ -3535,6 +3763,15 @@ def preserve_shebang(source: str, output: str) -> str:
     if lines and lines[0].startswith("#!"):
         return lines[0] + "\n" + output
     return output
+
+
+def resolve_effective_value_salt(source: str, config: ObfuscationConfig) -> int:
+    salt = config.value_salt & 0xFF
+    if config.auto_value_salt:
+        digest = hashlib.sha256(source.encode("utf-8")).digest()
+        salt ^= digest[0]
+        salt ^= (config.seed or 0) & 0xFF
+    return salt & 0xFF
 
 
 def _rotate_left_bytes(data: bytes, shift: int) -> bytes:
@@ -3779,10 +4016,12 @@ def obfuscate_source(
 ) -> tuple[str, dict[str, str], ObfuscationStats, dict[str, object]]:
     tree = ast.parse(source)
     rng = random.Random(config.seed)
+    value_salt = resolve_effective_value_salt(source, config)
     stats = ObfuscationStats()
     helper_hints: dict[str, object] = {
         "string_helpers": [],
         "call_helpers": [],
+        "value_salt": value_salt,
     }
     if "builtins_eval_call" in config.dynamic_methods["call"]:
         stats.warnings.append("risky method enabled: call:builtins_eval_call")
@@ -3791,9 +4030,11 @@ def obfuscate_source(
 
     rename_map: dict[str, str] = {}
     if config.rename:
-        used = collect_identifiers(tree) | config.preserve_names
+        keyword_preserve = collect_keyword_argument_names(tree)
+        preserve_for_rename = config.preserve_names | keyword_preserve
+        used = collect_identifiers(tree) | preserve_for_rename
         generator = NameGenerator(used, rng)
-        collector = RenameCollector(config.preserve_names, generator)
+        collector = RenameCollector(preserve_for_rename, generator)
         collector.visit(tree)
         rename_map = collector.mapping
         tree = Renamer(rename_map).visit(tree)
@@ -3822,6 +4063,7 @@ def obfuscate_source(
             config.string_chunk_min,
             config.string_chunk_max,
             config.string_mode,
+            value_salt,
         )
         tree = string_obf.visit(tree)
         stats.strings += string_obf.changed
@@ -3829,11 +4071,11 @@ def obfuscate_source(
             insertion_specs = list(helper_specs)
             rng.shuffle(insertion_specs)
             for helper_name, mode_tags in insertion_specs:
-                insert_after_docstring(tree, build_string_helper(helper_name, mode_tags, rng))
+                insert_after_docstring(tree, build_string_helper(helper_name, mode_tags, rng, value_salt))
             string_helpers = helper_hints["string_helpers"]
             assert isinstance(string_helpers, list)
             for helper_name, mode_tags in helper_specs:
-                string_helpers.append({"name": helper_name, "modes": mode_tags})
+                string_helpers.append({"name": helper_name, "modes": mode_tags, "salt": value_salt})
 
     call_helper_names: tuple[str, ...] = ()
     if config.calls:
@@ -3913,7 +4155,7 @@ def obfuscate_source(
                 tree = bool_obf.visit(tree)
                 stats.bools += bool_obf.changed
             elif transform == "ints" and config.ints:
-                int_obf = IntObfuscator(rng, config.int_mode)
+                int_obf = IntObfuscator(rng, config.int_mode, value_salt)
                 tree = int_obf.visit(tree)
                 stats.ints += int_obf.changed
             elif transform == "floats" and config.floats:
@@ -3921,7 +4163,7 @@ def obfuscate_source(
                 tree = float_obf.visit(tree)
                 stats.floats += float_obf.changed
             elif transform == "bytes" and config.bytes_:
-                bytes_obf = BytesObfuscator(rng, config.bytes_mode)
+                bytes_obf = BytesObfuscator(rng, config.bytes_mode, value_salt)
                 tree = bytes_obf.visit(tree)
                 stats.bytes_ += bytes_obf.changed
             elif transform == "none" and config.none_values:
@@ -4076,6 +4318,8 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
         "flow_count": config.flow_count,
         "order": list(config.transform_order),
         "seed": config.seed,
+        "value_salt": config.value_salt,
+        "auto_value_salt": config.auto_value_salt,
     }
 
 
@@ -4276,6 +4520,33 @@ def is_triplet_wrapper_lambda(func: ast.AST) -> bool:
     return False
 
 
+def extract_thunk_wrapped_call(node: ast.Call) -> ast.Call | None:
+    if not isinstance(node.func, ast.Lambda):
+        return None
+    if len(node.func.args.args) != 1 or len(node.args) != 1:
+        return None
+    thunk_name = node.func.args.args[0].arg
+    if (
+        not isinstance(node.func.body, ast.Call)
+        or not isinstance(node.func.body.func, ast.Name)
+        or node.func.body.func.id != thunk_name
+        or node.func.body.args
+        or node.func.body.keywords
+    ):
+        return None
+    inner = node.args[0]
+    if (
+        isinstance(inner, ast.Lambda)
+        and not inner.args.args
+        and inner.args.vararg is None
+        and inner.args.kwarg is None
+        and not inner.args.kwonlyargs
+        and isinstance(inner.body, ast.Call)
+    ):
+        return inner.body
+    return None
+
+
 class BestEffortDeobfuscator(ast.NodeTransformer):
     def __init__(
         self,
@@ -4290,9 +4561,12 @@ class BestEffortDeobfuscator(ast.NodeTransformer):
         if not isinstance(node.func, ast.Name):
             return None
         helper_name = node.func.id
-        mode_map = self.string_helpers.get(helper_name, {"xor": 0, "b85": 1, "reverse": 2})
+        mode_map = self.string_helpers.get(helper_name, {"xor": 0, "b85": 1, "reverse": 2, "_salt": 0})
         if helper_name not in self.string_helpers and not helper_name.startswith("_obf_str"):
             return None
+        salt = mode_map.get("_salt", 0)
+        if not isinstance(salt, int):
+            salt = 0
         if len(node.args) != 2:
             return None
         if not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, int):
@@ -4323,7 +4597,7 @@ class BestEffortDeobfuscator(ast.NodeTransformer):
                 for v in entry.elts[1].elts:
                     if not isinstance(v, ast.Constant) or not isinstance(v.value, int):
                         return None
-                    chars.append(chr(v.value ^ key))
+                    chars.append(chr(v.value ^ key ^ salt))
             self.changes += 1
             return ast.Constant("".join(chars))
         return None
@@ -4352,6 +4626,10 @@ class BestEffortDeobfuscator(ast.NodeTransformer):
             if rebuilt is not None:
                 self.changes += 1
             return rebuilt
+        thunk_call = extract_thunk_wrapped_call(node)
+        if thunk_call is not None:
+            self.changes += 1
+            return thunk_call
         return None
 
     def visit_Call(self, node: ast.Call) -> ast.AST:
@@ -4542,6 +4820,9 @@ def deobfuscate_with_meta(
     string_helper_map: dict[str, dict[str, int]] = {}
     call_helper_set: set[str] = set()
     if isinstance(raw_hints, dict):
+        default_salt = raw_hints.get("value_salt")
+        if not isinstance(default_salt, int):
+            default_salt = 0
         raw_string_helpers = raw_hints.get("string_helpers")
         if isinstance(raw_string_helpers, list):
             for item in raw_string_helpers:
@@ -4555,6 +4836,10 @@ def deobfuscate_with_meta(
                         val = mode_data.get(key)
                         if isinstance(val, int):
                             parsed_modes[key] = val
+                    salt = item.get("salt")
+                    if not isinstance(salt, int):
+                        salt = default_salt
+                    parsed_modes["_salt"] = salt
                     if parsed_modes:
                         string_helper_map[helper_name] = parsed_modes
         raw_call_helpers = raw_hints.get("call_helpers")
@@ -4604,7 +4889,8 @@ def explain_config(config: ObfuscationConfig) -> None:
         f"redirects={config.frontline_redirects}, redirect_rate={config.redirect_rate:.2f}, "
         f"redirect_max={config.redirect_max}, redirect_kinds={','.join(sorted(config.redirect_kinds))}, "
         f"redirect_all={config.redirect_all}, redirect_modes="
-        f"{config.redirect_class_mode}/{config.redirect_function_mode}/{config.redirect_variable_mode}"
+        f"{config.redirect_class_mode}/{config.redirect_function_mode}/{config.redirect_variable_mode}, "
+        f"value_salt={config.value_salt}, auto_value_salt={config.auto_value_salt}"
     )
     print(
         "Dynamic methods: "
