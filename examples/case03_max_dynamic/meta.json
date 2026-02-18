@@ -1,0 +1,134 @@
+{
+  "config": {
+    "attr_mode": "mixed",
+    "attr_rate": 1.0,
+    "bool_mode": "mixed",
+    "builtin_mode": "mixed",
+    "bytes_mode": "mixed",
+    "call_mode": "mixed",
+    "deobf_mode": "best-effort",
+    "dynamic_level": "heavy",
+    "dynamic_methods": {
+      "attr": [
+        "getattr",
+        "builtins_getattr",
+        "operator_attrgetter",
+        "lambda_getattr",
+        "globals_getattr",
+        "locals_getattr"
+      ],
+      "builtin": [
+        "alias",
+        "builtins_getattr_alias",
+        "globals_lookup"
+      ],
+      "call": [
+        "helper_wrap",
+        "lambda_wrap",
+        "builtins_eval_call"
+      ],
+      "setattr": [
+        "setattr",
+        "delattr",
+        "builtins_setattr",
+        "builtins_delattr",
+        "lambda_setattr",
+        "lambda_delattr"
+      ]
+    },
+    "flags": {
+      "attrs": true,
+      "bools": true,
+      "builtins": true,
+      "bytes": true,
+      "calls": true,
+      "floats": true,
+      "flow": true,
+      "ints": true,
+      "none": true,
+      "rename": true,
+      "setattrs": true,
+      "strings": true,
+      "wrap": true
+    },
+    "float_mode": "mixed",
+    "flow_count": 2,
+    "flow_rate": 1.0,
+    "int_mode": "mixed",
+    "junk": {
+      "count": 4,
+      "position": "top"
+    },
+    "level": 5,
+    "none_mode": "mixed",
+    "order": [
+      "attrs",
+      "setattrs",
+      "calls",
+      "bools",
+      "ints",
+      "floats",
+      "bytes",
+      "none",
+      "flow"
+    ],
+    "passes": 3,
+    "profile": "max",
+    "rates": {
+      "attr_rate": 1.0,
+      "builtin_rate": 1.0,
+      "call_rate": 1.0,
+      "flow_rate": 1.0,
+      "setattr_rate": 1.0
+    },
+    "seed": 303,
+    "setattr_mode": "mixed",
+    "string": {
+      "chunk_max": 6,
+      "chunk_min": 1,
+      "mode": "mixed"
+    }
+  },
+  "created_utc": "2026-02-18T05:44:08.021158+00:00",
+  "format": "obfumeta-v2",
+  "input_sha256": "ce9b4d745d88cb9e6cc6ad36b2087237b62fc70a4deaf3290a2db38bf691416b",
+  "output_sha256": "030f800c3552f47bd08a0599e9689308371535fa05b8a8fe9b725674a2ddc94d",
+  "rename_map": {
+    "Engine": "_oc",
+    "RAW": "_o6",
+    "SCALE": "_o7",
+    "_junk_0": "_o5",
+    "_junk_1": "_o4",
+    "_junk_2": "_o3",
+    "_junk_3": "_o0",
+    "e": "_o11",
+    "encode_name": "_o8",
+    "head": "_oa",
+    "main": "_o10",
+    "name": "_o9",
+    "self": "_od",
+    "tag": "_oe",
+    "tail": "_ob",
+    "value": "_of",
+    "x": "_o1",
+    "y": "_o2"
+  },
+  "stats": {
+    "attrs": 53,
+    "bools": 0,
+    "builtins": 211,
+    "bytes": 1,
+    "calls": 398,
+    "floats": 2,
+    "flow_blocks": 40,
+    "ints": 1084,
+    "junk_functions": 4,
+    "none": 12,
+    "renamed": 18,
+    "setattrs": 1,
+    "strings": 5
+  },
+  "warnings": [
+    "risky method enabled: call:builtins_eval_call"
+  ]
+}

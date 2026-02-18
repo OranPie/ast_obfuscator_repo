@@ -1,0 +1,112 @@
+{
+  "config": {
+    "attr_mode": "attrgetter",
+    "attr_rate": 0.55,
+    "bool_mode": "mixed",
+    "builtin_mode": "mixed",
+    "bytes_mode": "mixed",
+    "call_mode": "mixed",
+    "deobf_mode": "best-effort",
+    "dynamic_level": "safe",
+    "dynamic_methods": {
+      "attr": [
+        "operator_attrgetter"
+      ],
+      "builtin": [
+        "alias",
+        "builtins_getattr_alias"
+      ],
+      "call": [
+        "helper_wrap",
+        "lambda_wrap"
+      ],
+      "setattr": [
+        "setattr",
+        "delattr",
+        "builtins_setattr",
+        "builtins_delattr",
+        "lambda_setattr"
+      ]
+    },
+    "flags": {
+      "attrs": true,
+      "bools": true,
+      "builtins": true,
+      "bytes": false,
+      "calls": true,
+      "floats": true,
+      "flow": true,
+      "ints": true,
+      "none": true,
+      "rename": true,
+      "setattrs": true,
+      "strings": true,
+      "wrap": false
+    },
+    "float_mode": "mixed",
+    "flow_count": 1,
+    "flow_rate": 0.3,
+    "int_mode": "mixed",
+    "junk": {
+      "count": 0,
+      "position": "top"
+    },
+    "level": 4,
+    "none_mode": "mixed",
+    "order": [
+      "attrs",
+      "setattrs",
+      "calls",
+      "bools",
+      "ints",
+      "floats",
+      "bytes",
+      "none",
+      "flow"
+    ],
+    "passes": 1,
+    "profile": "stealth",
+    "rates": {
+      "attr_rate": 0.55,
+      "builtin_rate": 0.6,
+      "call_rate": 0.35,
+      "flow_rate": 0.3,
+      "setattr_rate": 0.45
+    },
+    "seed": 202,
+    "setattr_mode": "mixed",
+    "string": {
+      "chunk_max": 6,
+      "chunk_min": 1,
+      "mode": "mixed"
+    }
+  },
+  "created_utc": "2026-02-18T05:44:07.477177+00:00",
+  "format": "obfumeta-v2",
+  "input_sha256": "d720a4ffa69d98feb13817ad5841313adaac8e784214999d0e666ed080d06f95",
+  "output_sha256": "974ccaf9b7bdf19692e3a4b40af81e86cee2d89f27adcd8bbce1b4a1b0671357",
+  "rename_map": {
+    "Wallet": "_o0",
+    "amount": "_o3",
+    "owner": "_o2",
+    "run_demo": "_o4",
+    "self": "_o1",
+    "w": "_o5"
+  },
+  "stats": {
+    "attrs": 7,
+    "bools": 2,
+    "builtins": 8,
+    "bytes": 0,
+    "calls": 21,
+    "floats": 0,
+    "flow_blocks": 0,
+    "ints": 89,
+    "junk_functions": 0,
+    "none": 2,
+    "renamed": 6,
+    "setattrs": 1,
+    "strings": 6
+  },
+  "warnings": []
+}
