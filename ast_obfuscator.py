@@ -397,8 +397,12 @@ class Renamer(ast.NodeTransformer):
     def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
         if self.class_depth == 0 or self.function_depth > 0:
             node.name = self._maybe(node.name)
+        # Decorators/bases execute in outer scope, not class local scope.
+        node.bases = [self.visit(base) for base in node.bases]
+        node.keywords = [self.visit(kw) for kw in node.keywords]
+        node.decorator_list = [self.visit(dec) for dec in node.decorator_list]
         self.class_depth += 1
-        self.generic_visit(node)
+        node.body = [self.visit(stmt) for stmt in node.body]
         self.class_depth -= 1
         return node
 
@@ -408,7 +412,7 @@ class Renamer(ast.NodeTransformer):
         return node
 
     def visit_Name(self, node: ast.Name) -> ast.AST:
-        if self.class_depth > 0 and self.function_depth == 0:
+        if self.class_depth > 0 and self.function_depth == 0 and isinstance(node.ctx, (ast.Store, ast.Del)):
             return node
         node.id = self._maybe(node.id)
         return node
@@ -616,6 +620,19 @@ class StringObfuscator(ast.NodeTransformer):
         return out
 
     def visit_Module(self, node: ast.Module) -> ast.AST:
+        if (
+            node.body
+            and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant)
+            and isinstance(node.body[0].value.value, str)
+            and any(
+                isinstance(stmt, ast.ImportFrom) and stmt.level == 0 and stmt.module == "__future__"
+                for stmt in node.body[1:]
+            )
+        ):
+            # Preserve real module docstring when __future__ imports exist.
+            node.body = [node.body[0]] + [self.visit(stmt) for stmt in node.body[1:]]
+            return node
         node.body = self._visit_body(node.body)
         return node
 
@@ -2042,6 +2059,8 @@ class ImportObfuscator(ast.NodeTransformer):
         if self.class_depth > 0 or self.rng.random() > self.rate:
             return node
         if node.level != 0 or node.module is None:
+            return node
+        if node.module == "__future__":
             return node
         if any(alias.name == "*" for alias in node.names):
             return node
@@ -3692,16 +3711,26 @@ def build_builtin_alias(alias_name: str, builtin_name: str, mode: str, rng: rand
     return ast.Assign(targets=[ast.Name(id=alias_name, ctx=ast.Store())], value=value)
 
 
-def insert_after_docstring(module: ast.Module, stmt: ast.stmt) -> None:
+def _is_future_import(stmt: ast.stmt) -> bool:
+    return isinstance(stmt, ast.ImportFrom) and stmt.level == 0 and stmt.module == "__future__"
+
+
+def module_preamble_insert_index(body: list[ast.stmt]) -> int:
+    idx = 0
     if (
-        module.body
-        and isinstance(module.body[0], ast.Expr)
-        and isinstance(module.body[0].value, ast.Constant)
-        and isinstance(module.body[0].value.value, str)
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
     ):
-        module.body.insert(1, stmt)
-    else:
-        module.body.insert(0, stmt)
+        idx = 1
+    while idx < len(body) and _is_future_import(body[idx]):
+        idx += 1
+    return idx
+
+
+def insert_after_docstring(module: ast.Module, stmt: ast.stmt) -> None:
+    module.body.insert(module_preamble_insert_index(module.body), stmt)
 
 
 def build_junk_function(name: str, rng: random.Random) -> ast.FunctionDef:
@@ -3720,14 +3749,7 @@ def build_junk_function(name: str, rng: random.Random) -> ast.FunctionDef:
 
 
 def docstring_insert_index(body: list[ast.stmt]) -> int:
-    if (
-        body
-        and isinstance(body[0], ast.Expr)
-        and isinstance(body[0].value, ast.Constant)
-        and isinstance(body[0].value.value, str)
-    ):
-        return 1
-    return 0
+    return module_preamble_insert_index(body)
 
 
 def inject_junk_functions(tree: ast.AST, rng: random.Random, count: int, position: str) -> int:
