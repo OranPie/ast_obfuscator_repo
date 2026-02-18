@@ -74,6 +74,7 @@
     "level": 3,
     "loop_mode": "iterator",
     "loop_rate": 1.0,
+    "meta_omit_rename_map": false,
     "none_mode": "mixed",
     "order": [
       "imports",
@@ -110,10 +111,25 @@
       "mode": "mixed"
     }
   },
-  "created_utc": "2026-02-18T06:13:44.162025+00:00",
+  "created_utc": "2026-02-18T06:28:00.237429+00:00",
   "format": "obfumeta-v2",
+  "helper_hints": {
+    "call_helpers": [
+      "_oOOloOO0ll"
+    ],
+    "string_helpers": [
+      {
+        "modes": {
+          "b85": 268630,
+          "reverse": 499027,
+          "xor": 213047
+        },
+        "name": "_OlOloIIIo1"
+      }
+    ]
+  },
   "input_sha256": "1dd1552c09e37ab7ae1a83749aa99ec0e74ca23a9a664de8d69c0f08a41dcdd6",
-  "output_sha256": "42eb5d22bc955ea072fd40821275af40e89ec6beeee3d3bffee91fcc1b988807",
+  "output_sha256": "fdbdb5556c1267d07273696974089242e7fb6f66d2f67640cd947d397611e595",
   "rename_map": {
     "_junk_0": "_o0l10lO",
     "avg": "_oo0I0ol0I1",
@@ -127,17 +143,17 @@
     "y": "_II01IOo1"
   },
   "stats": {
-    "attrs": 18,
+    "attrs": 20,
     "bools": 11,
-    "branch_extensions": 18,
-    "builtins": 49,
+    "branch_extensions": 17,
+    "builtins": 87,
     "bytes": 0,
-    "calls": 86,
-    "conditions": 29,
+    "calls": 116,
+    "conditions": 28,
     "floats": 4,
-    "flow_blocks": 5,
+    "flow_blocks": 6,
     "imports": 3,
-    "ints": 459,
+    "ints": 429,
     "junk_functions": 1,
     "loops": 1,
     "none": 0,

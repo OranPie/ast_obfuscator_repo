@@ -132,6 +132,7 @@ Resolution order:
 - `--emit-map path.json`
 - `--emit-meta path.json`
 - `--[no-]meta-include-source` (default: **no-meta-include-source**)
+- `--[no-]meta-omit-rename-map` (default: include rename map)
 - `--deobfuscate --meta meta.json`
 - `--deobf-mode {best-effort,strict}`
 - `--force`
@@ -164,12 +165,16 @@ python3 ast_obfuscator.py in.py -o out.py \
 - 当前输出格式：`obfumeta-v2`
 - 兼容读取：`obfumeta-v1` + `obfumeta-v2`
 - 默认不嵌入源码（`--no-meta-include-source`），因此 strict 模式可能失败。
+- 可选不导出 rename_map（`--meta-omit-rename-map`），降低元数据泄露面，但会削弱 best-effort 还原能力。
+- `obfumeta` 会附带 helper hints（字符串 helper 模式标签 / 调用 helper 名称），用于在 helper 随机化后提升反混淆兼容性。
 - `best-effort`：在无源码时尝试基于 rename_map 做部分恢复并给出 warning。
 
 ### English
 - Current emit format: `obfumeta-v2`
 - Reader supports both: `obfumeta-v1` and `obfumeta-v2`
 - Source payload is not embedded by default (`--no-meta-include-source`)
+- You can omit `rename_map` from metadata (`--meta-omit-rename-map`) to reduce metadata leakage, but this weakens best-effort restoration.
+- `obfumeta` now stores helper hints (string helper mode tags / call helper names) so deobfuscation can track randomized helper signatures.
 - `best-effort`: attempts partial restoration (rename-map based) and prints warnings.
 
 ---
@@ -217,6 +222,7 @@ python3 ast_obfuscator.py app.obf.py -o app.restore.py \
 - 高强度 profile + 高 rate 会显著增加代码体积。
 - 对反射/动态元编程重度代码，请先小范围验证。
 - `--check` 只做 compile 检查，不等于完整行为测试。
+- `--wrap` 会做额外包装（压缩/编码/分块与轻量变换），主要提升静态阅读成本，不等于加密壳。
 
 ---
 

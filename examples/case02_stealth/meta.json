@@ -67,6 +67,7 @@
     "level": 4,
     "loop_mode": "mixed",
     "loop_rate": 0.25,
+    "meta_omit_rename_map": false,
     "none_mode": "mixed",
     "order": [
       "imports",
@@ -103,10 +104,25 @@
       "mode": "mixed"
     }
   },
-  "created_utc": "2026-02-18T06:14:24.050001+00:00",
+  "created_utc": "2026-02-18T06:27:57.678653+00:00",
   "format": "obfumeta-v2",
+  "helper_hints": {
+    "call_helpers": [
+      "_o0IlolI0I1ll"
+    ],
+    "string_helpers": [
+      {
+        "modes": {
+          "b85": 434250,
+          "reverse": 170725,
+          "xor": 371425
+        },
+        "name": "_Il0Ioo00O"
+      }
+    ]
+  },
   "input_sha256": "d720a4ffa69d98feb13817ad5841313adaac8e784214999d0e666ed080d06f95",
-  "output_sha256": "8269c97e004226d3d0d995a28a021f92c5deaac2586520ce4d1d447117ff36e9",
+  "output_sha256": "09a0bf134008fc9abad9634a444f2bef704b73a4d8897cc6fb2f841ba79dbca9",
   "rename_map": {
     "Wallet": "_oooII1oloool",
     "amount": "_lIOoooOlI1l",
@@ -116,22 +132,22 @@
     "w": "_IIO1OIOOOo"
   },
   "stats": {
-    "attrs": 5,
-    "bools": 4,
-    "branch_extensions": 0,
-    "builtins": 10,
+    "attrs": 9,
+    "bools": 2,
+    "branch_extensions": 1,
+    "builtins": 9,
     "bytes": 0,
-    "calls": 12,
-    "conditions": 3,
+    "calls": 18,
+    "conditions": 2,
     "floats": 0,
-    "flow_blocks": 1,
+    "flow_blocks": 2,
     "imports": 0,
-    "ints": 61,
+    "ints": 67,
     "junk_functions": 0,
     "loops": 0,
     "none": 2,
     "renamed": 6,
-    "setattrs": 0,
+    "setattrs": 1,
     "strings": 6
   },
   "warnings": []

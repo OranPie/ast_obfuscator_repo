@@ -74,6 +74,7 @@
     "level": 3,
     "loop_mode": "mixed",
     "loop_rate": 0.65,
+    "meta_omit_rename_map": false,
     "none_mode": "mixed",
     "order": [
       "imports",
@@ -110,11 +111,26 @@
       "mode": "mixed"
     }
   },
-  "created_utc": "2026-02-18T06:14:23.781890+00:00",
+  "created_utc": "2026-02-18T06:27:57.402602+00:00",
   "format": "obfumeta-v2",
+  "helper_hints": {
+    "call_helpers": [
+      "_ooOlIl0O"
+    ],
+    "string_helpers": [
+      {
+        "modes": {
+          "b85": 189596,
+          "reverse": 17699,
+          "xor": 690044
+        },
+        "name": "_ool0OIlO"
+      }
+    ]
+  },
   "input_sha256": "678aeba871f85ff2e0ee85f044220e0799310525de32548f09caaed574f427cf",
   "original_source_b85_zlib": "c-l>n&2GXl5QOi3im7`^q!1_-qKyQXJ_bUTNjAZfe<It7)FR%!P6BFu^vupTyRR?nA^7!0*)`b_{dc@N`_4G$UosFjZxt?5OIuTeAWg5SOd4aYcLpKKs6teAfHJ-F5r(8?j5XB4I&Y*_Ka`D94;1o>A-&5Kdzg(+VgC0N2XArmZm>-@Vl_JpY;&~EV}!C;{O1Rt^F%Ql0{JR6@dZNdJcSB6bvm`$$#~AOI!@w~-E<S2cTP7Pszn$~wv6RCV!H$BRF4OxNAmoCv6f#+Ylqteyd%5KVfPtu``h&qc26f_DPIUH4GDomq6%T8vO@5sP4AVB*|G&s(>3t|r+v9A@KJ6Ge3rX&p0i)Q7lT>",
-  "output_sha256": "151d2f7f5e2e2217b59ae36bcd380d2b6ca6fe993f738f1735b530a9aba39c6b",
+  "output_sha256": "76822d25d6a67d94543c054438a4ebbf6f2ec15e25940c8f8b6484946b571120",
   "rename_map": {
     "_junk_0": "_IOol10I0IOo",
     "badge": "_OlIO1OlOIO",
@@ -130,17 +146,17 @@
     "y": "_OoOI1ooI"
   },
   "stats": {
-    "attrs": 19,
-    "bools": 6,
-    "branch_extensions": 7,
-    "builtins": 36,
+    "attrs": 17,
+    "bools": 12,
+    "branch_extensions": 5,
+    "builtins": 69,
     "bytes": 0,
-    "calls": 92,
-    "conditions": 21,
+    "calls": 102,
+    "conditions": 13,
     "floats": 3,
-    "flow_blocks": 7,
+    "flow_blocks": 6,
     "imports": 2,
-    "ints": 465,
+    "ints": 453,
     "junk_functions": 1,
     "loops": 0,
     "none": 0,

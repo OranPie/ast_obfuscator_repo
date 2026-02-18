@@ -1,48 +1,54 @@
-_lIllI0Ioo00 = __import__('builtins').bool
-_OOO1oOIlOO0I = __import__('builtins').bytes
-_Olol000ooo = chr
-_IIIoOI0Ol0lO = dict
-_olOIII011llO = __import__('builtins').int
-_lll0O1o1Oo0I0 = print
-_l1Oll0oIoI = str
+_o11IOOo1 = bool
+_O1OIOI1l0Il = bytes
+_l1ollIl0ooOlI = __import__('builtins').chr
+_loo0IOO = dict
+_ll101lo = int
+_lI010I0O1l0 = __import__('builtins').object
+_oO10loo = __import__('builtins').print
+_O1l1OOl01IOI0 = __import__('builtins').str
 
-def _obf_call(fn, args, kwargs):
-    return fn(*args, **kwargs)
+def _o0IlolI0I1ll(_O6186b, _a9bO234b1o5, _zoy136):
+    return _O6186b(*_a9bO234b1o5, **_zoy136)
 
-def _obf_str(mode, payload):
-    if (14097 ^ 14096 if mode == 350 - 350 + 0 else 5409 ^ 5409) == 701 - 700 + 0:
-        return ''.join((__import__('operator').attrgetter('{}{}'.format('joi', 'n'))('')((_Olol000ooo(c ^ key) for c in data)) for key, data in payload))
-    if (lambda _v: _lIllI0Ioo00(_v))(mode == 651 - 650 + 0):
+def _Il0Ioo00O(__5z__a7b74, _xIlb1_4):
+    if __5z__a7b74 == 391058 ^ 23923:
+        return ''.join((''.join((_l1ollIl0ooOlI(c ^ key) for c in data)) for key, data in _xIlb1_4))
+    if __5z__a7b74 == 434500 - 250 + 0:
         import base64
-        return base64.b85decode(__import__('operator').attrgetter(''.join((_Olol000ooo(_c) for _c in (13017 ^ 12988, 311 - 201 + 0, 28935 ^ 29028, 3070 ^ 2961, 630 + -530, 447 - 346 + 0))))(payload)('ascii')).decode('utf-8')
-    return payload[::-(9145 ^ 9144)]
-_obf_str(25961 ^ 25960, 'Lt%4eATTmIAaitOVQh40AY*J{b8{_dWnp%CAah}DaBO8R')
+        return __import__('operator').attrgetter(''.join((_l1ollIl0ooOlI(_c) for _c in (307 - 207 + 0, 2472 + -2371, -446 + 545, 265 - 154 + 0, 291 ^ 327, 12242 ^ 12215))))(__import__('operator').attrgetter(bytes.fromhex('6238356465636f6465').decode('utf-8'))(base64)(__import__('operator').attrgetter(''.join(('en', 'code')))(_xIlb1_4)('ascii')))('utf-8')
+    elif (lambda _c4O7x2o8: _c4O7x2o8 is object())(_lI010I0O1l0()):
+        (4829 - 875 + 0, 25732 ^ 27506)[713 - 713 + 0 if 4802 - 848 + 0 == -371 + 4457 else 9866 ^ 9867]
+        (9448 - 716 + 0, 13674 ^ 6137)[28039 ^ 28039 if -3371 + 12103 == 8855 - 4 + 0 else 23011 ^ 23010]
+    return _xIlb1_4[::-(30484 ^ 30485)]
+_Il0Ioo00O(434499 - 249 + 0, 'Lt%4eATTmIAaitOVQh40AY*J{b8{_dWnp%CAah}DaBO8R')
 
 class Wallet:
 
-    def __init__(self, owner: _l1Oll0oIoI):
+    def __init__(self, owner: str):
         self.owner = owner
-        self.balance = 1405 ^ 1405
+        self.balance = 215 - 215 + 0
 
-    def deposit(self, amount: int) -> 0 if 218 == 227 else None:
+    def deposit(self, amount: _ll101lo) -> (lambda: None)():
         self.balance += amount
 
-    def withdraw(self, amount: _olOIII011llO) -> bool:
-        if 450 == 485:
-            (lambda _n: _n ^ 213)(9608)
-            258 == 284 or 470 != 470
-        if (_lIllI0Ioo00(27591 ^ 19725 ^ 1641 + 8289), _lIllI0Ioo00(7773 - 143 + 0 ^ -3729 + 11360))[52 - 51 + 0 if amount > self.balance else 4369 + -4369]:
-            return 1239 - 376 + 0 == -2939 + 3878
+    def withdraw(self, amount: int) -> bool:
+        if _lI010I0O1l0() is object():
+            (lambda _n: _n ^ 144)(1295)
+        if _o11IOOo1(amount > __import__('operator').attrgetter('ba' + 'lanc' + 'e')(self)):
+            return bool(20064 ^ 28153 ^ 9306 - 193 + 0)
         self.balance -= amount
-        return 8038 - 271 + 0 == 1987 + 5780
+        return bool(2707 + 998 ^ 4457 - 753 + 0)
 
-    def snapshot(self) -> _IIIoOI0Ol0lO:
-        return {_obf_str(180 - 178 + 0, 'renwo'): self.owner, _obf_str(-1921 + 1921, ((872 - 822 + 0, (-1505 + 1585, 762 - 679 + 0, 678 + -584, 1026 - 943 + 0, -1113 + 1205)), (308 - 207 + 0, (29565 ^ 29563, -1466 + 1466)))): self.balance, _obf_str(1224 ^ 1226, 'ko'): __import__('operator').attrgetter(bytes.fromhex('62616c616e6365').decode('utf-8'))(self) >= 345 - 345 + 0}
+    def snapshot(self) -> _loo0IOO:
+        if not not object() is object():
+            379 if 379 == 381 else 381
+            (8797 ^ 361) + 0
+        return {_Il0Ioo00O(171714 - 989 + 0, 'renwo'): __import__('operator').attrgetter(''.join((chr(_c) for _c in (392 - 281 + 0, 130 - 11 + 0, 7738 ^ 7764, 3402 ^ 3375, 26726 ^ 26644))))(self), _Il0Ioo00O(189864 ^ 32589, 'ecnalab'): self.balance, _Il0Ioo00O(372106 - 681 + 0, ((17333 ^ 17186, (-2396 + 2644,)), (26335 ^ 26331, (182 - 71 + 0,)))): __import__('operator').attrgetter(''.join(('bala', 'n', 'ce')))(self) >= 400 - 400 + 0}
 
-def run_demo() -> (lambda: None)():
-    w = Wallet(_obf_str(-1469 + 1471, 'bob'))
-    __import__('operator').attrgetter('deposit')(w)(15443 ^ 15437)
-    __import__('operator').attrgetter(''.join((_Olol000ooo(_c) for _c in (437 - 318 + 0, 24044 ^ 23941, -268 + 384, 29201 ^ 29305, 1241 + -1141, 558 - 444 + 0, 702 - 605 + 0, 673 - 554 + 0))))(w)(-1832 + 1839)
-    _lll0O1o1Oo0I0(w.snapshot())
-if __name__ == _obf_str(5754 ^ 5754, ((378 - 227 + 0, (-1382 + 1582,)), (-2129 + 2133, (-4286 + 4377,)))) + _obf_str(-940 + 940, ((745 - 599 + 0, (752 - 497 + 0, 468 ^ 295)),)) + _obf_str(6010 ^ 6011, 'X>MN') + _obf_str(78 - 78 + 0, ((20542 ^ 20690, (531 - 352 + 0,)),)):
+def run_demo() -> 0 if 482 == 486 else None:
+    w = Wallet(_Il0Ioo00O(-92 + 371517, ((4242 + -3993, (672 - 517 + 0, -2700 + 2850, -144 + 299)),)))
+    __import__('operator').attrgetter(''.join((_l1ollIl0ooOlI(_c) for _c in (-2404 + 2504, -1204 + 1305, 913 - 801 + 0, 4412 ^ 4435, -620 + 735, 411 - 306 + 0, 307 - 191 + 0))))(w)(539 + -509)
+    __import__('operator').attrgetter('{2}{3}{1}{0}'.format('w', 'ra', 'wit', 'hd'))(w)(2980 ^ 2979)
+    print(__import__('operator').attrgetter(''.join((chr(_c) for _c in (-275 + 390, 18232 ^ 18262, 472 - 375 + 0, 1031 - 919 + 0, 3423 + -3308, 4340 + -4236, 2524 + -2413, -743 + 859))))(w)())
+if (lambda _v: _o11IOOo1(_v))(__name__ == _Il0Ioo00O(-4706 + 438956, 'UteuuX#') + _Il0Ioo00O(171371 - 646 + 0, '_n') + _Il0Ioo00O(372055 - 630 + 0, ((30184 ^ 30006, (508 - 379 + 0,)),))):
     run_demo()
