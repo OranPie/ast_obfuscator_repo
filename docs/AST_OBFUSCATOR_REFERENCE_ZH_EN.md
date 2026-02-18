@@ -129,6 +129,10 @@ Resolution order:
 - `--flow-count N`
 - `--string-helpers N` (number of emitted string decode helpers)
 - `--call-helpers N` (number of emitted call wrapper helpers)
+- `--[no-]frontline-redirects` (redirect top-level class/function/variable loads via generated resolvers)
+- `--redirect-rate 0.0..1.0`
+- `--redirect-max N`
+- `--redirect-kinds class,function,variable`
 
 ### Metadata / deobfuscation
 - `--emit-map path.json`

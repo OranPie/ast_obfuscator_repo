@@ -2,6 +2,7 @@
 python3 ast_obfuscator.py examples/case02_stealth/src.py -o examples/case02_stealth/obf.py \
   --profile stealth --level 4 --seed 202 --passes 2 \
   --no-wrap --string-mode split --string-helpers 3 --call-helpers 3 \
+  --frontline-redirects --redirect-rate 0.60 --redirect-max 12 --redirect-kinds class,function,variable \
   --attr-mode mixed --attr-rate 0.80 --setattr-rate 0.75 \
   --call-rate 0.70 --builtin-rate 0.80 --flow-rate 0.55 \
   --condition-rate 0.70 --branch-rate 0.40 --loop-rate 0.55 \

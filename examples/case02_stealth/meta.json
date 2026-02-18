@@ -49,6 +49,7 @@
       "conditions": true,
       "floats": true,
       "flow": true,
+      "frontline_redirects": true,
       "imports": false,
       "ints": true,
       "loops": false,
@@ -100,7 +101,18 @@
       "flow_rate": 0.55,
       "import_rate": 0.35,
       "loop_rate": 0.55,
+      "redirect_rate": 0.6,
       "setattr_rate": 0.75
+    },
+    "redirect_rate": 0.6,
+    "redirects": {
+      "enabled": true,
+      "kinds": [
+        "class",
+        "function",
+        "variable"
+      ],
+      "max": 12
     },
     "seed": 202,
     "setattr_mode": "mixed",
@@ -111,28 +123,29 @@
       "mode": "split"
     }
   },
-  "created_utc": "2026-02-18T07:57:22.160059+00:00",
+  "created_utc": "2026-02-18T08:09:13.557080+00:00",
   "format": "obfumeta-v2",
   "input_sha256": "d720a4ffa69d98feb13817ad5841313adaac8e784214999d0e666ed080d06f95",
-  "output_sha256": "501dc8bcf0883cf720397d526397725b0ce5437a916e363a91053bdd82bfb22f",
+  "output_sha256": "cc5d01740ef9d2b4a68ca29aba2da6d18b413283407dd374e2f1f13be71e6d3e",
   "stats": {
-    "attrs": 54,
-    "bools": 4,
-    "branch_extensions": 4,
-    "builtins": 71,
+    "attrs": 56,
+    "bools": 10,
+    "branch_extensions": 8,
+    "builtins": 94,
     "bytes": 0,
-    "calls": 258,
-    "conditions": 8,
+    "calls": 273,
+    "conditions": 19,
     "floats": 0,
-    "flow_blocks": 7,
+    "flow_blocks": 10,
     "imports": 0,
-    "ints": 513,
+    "ints": 663,
     "junk_functions": 0,
     "loops": 0,
     "none": 4,
+    "redirects": 1,
     "renamed": 6,
     "setattrs": 2,
-    "strings": 6
+    "strings": 11
   },
   "warnings": []
 }

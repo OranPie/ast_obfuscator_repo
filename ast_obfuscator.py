@@ -12,6 +12,7 @@ Features
 - Transformation order and density (`--order`, `--import-rate`, `--condition-rate`,
   `--branch-rate`, `--loop-rate`, `--attr-rate`, `--flow-rate`, `--flow-count`)
 - Helper multiplicity (`--string-helpers`, `--call-helpers`)
+- Frontline symbol redirects (`--frontline-redirects`, `--redirect-rate`, `--redirect-max`, `--redirect-kinds`)
 - Multiple transformation passes (`--passes`)
 - Junk function injection (`--junk`, `--junk-position`)
 - Deterministic builds (`--seed`)
@@ -173,6 +174,10 @@ class ObfuscationConfig:
     condition_mode: str
     loop_mode: str
     attr_mode: str
+    frontline_redirects: bool
+    redirect_rate: float
+    redirect_max: int
+    redirect_kinds: set[str]
     import_rate: float
     flow_rate: float
     condition_rate: float
@@ -221,6 +226,7 @@ class ObfuscationStats:
     setattrs: int = 0
     calls: int = 0
     builtins: int = 0
+    redirects: int = 0
     junk_functions: int = 0
     warnings: list[str] = field(default_factory=list)
 
@@ -2167,6 +2173,19 @@ def parse_args() -> argparse.Namespace:
         help="Attribute load replacement style",
     )
     parser.add_argument(
+        "--frontline-redirects",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Redirect top-level class/function/variable symbol loads through generated resolvers",
+    )
+    parser.add_argument("--redirect-rate", type=float, default=0.75, help="0.0-1.0 chance to redirect each candidate symbol")
+    parser.add_argument("--redirect-max", type=int, default=20, help="Maximum number of redirected symbols")
+    parser.add_argument(
+        "--redirect-kinds",
+        default="class,function,variable",
+        help="Comma-separated redirect symbol kinds: class,function,variable",
+    )
+    parser.add_argument(
         "--none-mode",
         choices=("mixed", "lambda", "ifexpr"),
         default="mixed",
@@ -2297,6 +2316,7 @@ def default_features(level: int) -> dict[str, int | bool]:
             "calls": False,
             "builtins": False,
             "wrap": False,
+            "frontline_redirects": False,
             "passes": 1,
             "junk": 0,
         },
@@ -2317,6 +2337,7 @@ def default_features(level: int) -> dict[str, int | bool]:
             "calls": False,
             "builtins": True,
             "wrap": False,
+            "frontline_redirects": False,
             "passes": 1,
             "junk": 0,
         },
@@ -2337,6 +2358,7 @@ def default_features(level: int) -> dict[str, int | bool]:
             "calls": False,
             "builtins": True,
             "wrap": False,
+            "frontline_redirects": True,
             "passes": 1,
             "junk": 0,
         },
@@ -2357,6 +2379,7 @@ def default_features(level: int) -> dict[str, int | bool]:
             "calls": True,
             "builtins": True,
             "wrap": False,
+            "frontline_redirects": True,
             "passes": 2,
             "junk": 1,
         },
@@ -2377,6 +2400,7 @@ def default_features(level: int) -> dict[str, int | bool]:
             "calls": True,
             "builtins": True,
             "wrap": True,
+            "frontline_redirects": True,
             "passes": 2,
             "junk": 3,
         },
@@ -2418,6 +2442,9 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "flow_count": 1,
             "string_helpers": 2,
             "call_helpers": 2,
+            "frontline_redirects": True,
+            "redirect_rate": 0.75,
+            "redirect_max": 16,
         },
         "stealth": {
             "rename": True,
@@ -2451,6 +2478,9 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "flow_count": 1,
             "string_helpers": 2,
             "call_helpers": 2,
+            "frontline_redirects": True,
+            "redirect_rate": 0.45,
+            "redirect_max": 10,
         },
         "max": {
             "rename": True,
@@ -2484,6 +2514,9 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "flow_count": 2,
             "string_helpers": 4,
             "call_helpers": 4,
+            "frontline_redirects": True,
+            "redirect_rate": 1.0,
+            "redirect_max": 48,
         },
     }
     return profiles[profile]
@@ -2595,6 +2628,17 @@ def parse_transform_order(raw: str) -> tuple[str, ...]:
     return parsed
 
 
+def parse_redirect_kinds(raw: str) -> set[str]:
+    allowed = {"class", "function", "variable"}
+    parts = {part.strip() for part in raw.split(",") if part.strip()}
+    if not parts:
+        return set(allowed)
+    invalid = sorted(parts - allowed)
+    if invalid:
+        raise ValueError(f"Unknown redirect kind(s): {', '.join(invalid)}")
+    return parts
+
+
 def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
     base = default_features(args.level)
     prof = profile_defaults(args.profile)
@@ -2628,6 +2672,11 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         prof.get("builtins", base["builtins"]) if args.builtins is None else args.builtins
     )
     wrap = bool(wrap_default if args.wrap is None else args.wrap)
+    frontline_redirects = bool(
+        prof.get("frontline_redirects", base.get("frontline_redirects", False))
+        if args.frontline_redirects is None
+        else args.frontline_redirects
+    )
 
     preserve_names = {name.strip() for name in args.preserve.split(",") if name.strip()}
     preserve_names.update({"__name__", "__file__", "__package__", "__spec__"})
@@ -2661,6 +2710,9 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
     flow_rate = float(prof.get("flow_rate", args.flow_rate))
     flow_count_default = int(prof.get("flow_count", args.flow_count))
     flow_count = flow_count_default
+    redirect_rate = float(prof.get("redirect_rate", args.redirect_rate))
+    redirect_max = int(prof.get("redirect_max", args.redirect_max))
+    redirect_kinds = parse_redirect_kinds(args.redirect_kinds)
     string_helpers = int(prof.get("string_helpers", args.string_helpers))
     call_helpers = int(prof.get("call_helpers", args.call_helpers))
 
@@ -2685,6 +2737,12 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         flow_rate = args.flow_rate
     if "--flow-count" in sys.argv:
         flow_count = args.flow_count
+    if "--redirect-rate" in sys.argv:
+        redirect_rate = args.redirect_rate
+    if "--redirect-max" in sys.argv:
+        redirect_max = args.redirect_max
+    if "--redirect-kinds" in sys.argv:
+        redirect_kinds = parse_redirect_kinds(args.redirect_kinds)
     if "--string-helpers" in sys.argv:
         string_helpers = args.string_helpers
     if "--call-helpers" in sys.argv:
@@ -2702,6 +2760,8 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         raise ValueError("--loop-rate must be between 0.0 and 1.0")
     if flow_rate < 0.0 or flow_rate > 1.0:
         raise ValueError("--flow-rate must be between 0.0 and 1.0")
+    if redirect_rate < 0.0 or redirect_rate > 1.0:
+        raise ValueError("--redirect-rate must be between 0.0 and 1.0")
     if attr_rate < 0.0 or attr_rate > 1.0:
         raise ValueError("--attr-rate must be between 0.0 and 1.0")
     if setattr_rate < 0.0 or setattr_rate > 1.0:
@@ -2712,6 +2772,8 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         raise ValueError("--builtin-rate must be between 0.0 and 1.0")
     if flow_count <= 0:
         raise ValueError("--flow-count must be >= 1")
+    if redirect_max <= 0:
+        raise ValueError("--redirect-max must be >= 1")
     if string_helpers <= 0:
         raise ValueError("--string-helpers must be >= 1")
     if call_helpers <= 0:
@@ -2779,6 +2841,10 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         condition_mode=args.condition_mode,
         loop_mode=args.loop_mode,
         attr_mode=args.attr_mode,
+        frontline_redirects=frontline_redirects,
+        redirect_rate=redirect_rate,
+        redirect_max=redirect_max,
+        redirect_kinds=redirect_kinds,
         import_rate=import_rate,
         flow_rate=flow_rate,
         condition_rate=condition_rate,
@@ -2863,6 +2929,254 @@ def collect_builtin_loads(tree: ast.AST, preserve_names: set[str]) -> list[str]:
 
     BuiltinLoadVisitor().visit(tree)
     return sorted(found)
+
+
+def _is_redirectable_symbol(name: str, preserve_names: set[str]) -> bool:
+    if (
+        not name
+        or name in preserve_names
+        or keyword.iskeyword(name)
+        or name in BUILTIN_NAMES
+        or (name.startswith("__") and name.endswith("__"))
+    ):
+        return False
+    return True
+
+
+def collect_frontline_redirect_candidates(
+    module: ast.Module,
+    kinds: set[str],
+    preserve_names: set[str],
+) -> list[tuple[str, int]]:
+    raw: list[tuple[str, int]] = []
+    for idx, stmt in enumerate(module.body):
+        if "function" in kinds and isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            raw.append((stmt.name, idx))
+            continue
+        if "class" in kinds and isinstance(stmt, ast.ClassDef):
+            raw.append((stmt.name, idx))
+            continue
+        if "variable" in kinds and isinstance(stmt, ast.Assign):
+            if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
+                raw.append((stmt.targets[0].id, idx))
+            continue
+        if "variable" in kinds and isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+            raw.append((stmt.target.id, idx))
+
+    counts: dict[str, int] = {}
+    for name, _ in raw:
+        counts[name] = counts.get(name, 0) + 1
+    return [
+        (name, idx)
+        for name, idx in raw
+        if counts.get(name, 0) == 1 and _is_redirectable_symbol(name, preserve_names)
+    ]
+
+
+def build_redirect_resolver(alias_name: str, target_name: str, rng: random.Random) -> ast.Assign:
+    globals_arg = random_local_identifier(rng)
+    name_arg = random_local_identifier(rng)
+    helper_factory = ast.Lambda(
+        args=ast.arguments(
+            posonlyargs=[],
+            args=[ast.arg(arg=globals_arg), ast.arg(arg=name_arg)],
+            kwonlyargs=[],
+            kw_defaults=[],
+            defaults=[],
+        ),
+        body=ast.Lambda(
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[],
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Call(
+                        func=ast.Name(id=globals_arg, ctx=ast.Load()),
+                        args=[],
+                        keywords=[],
+                    ),
+                    attr="get",
+                    ctx=ast.Load(),
+                ),
+                args=[ast.Name(id=name_arg, ctx=ast.Load())],
+                keywords=[],
+            ),
+        ),
+    )
+    return ast.Assign(
+        targets=[ast.Name(id=alias_name, ctx=ast.Store())],
+        value=ast.Call(
+            func=helper_factory,
+            args=[ast.Name(id="globals", ctx=ast.Load()), build_text_expr(target_name, rng)],
+            keywords=[],
+        ),
+    )
+
+
+def collect_function_blocked_names(node: ast.AST) -> set[str]:
+    blocked: set[str] = set()
+    if isinstance(node, ast.Lambda):
+        for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs):
+            blocked.add(arg.arg)
+        if node.args.vararg is not None:
+            blocked.add(node.args.vararg.arg)
+        if node.args.kwarg is not None:
+            blocked.add(node.args.kwarg.arg)
+        return blocked
+
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs):
+            blocked.add(arg.arg)
+        if node.args.vararg is not None:
+            blocked.add(node.args.vararg.arg)
+        if node.args.kwarg is not None:
+            blocked.add(node.args.kwarg.arg)
+        body_nodes = node.body
+    else:
+        return blocked
+
+    global_declared: set[str] = set()
+    nonlocal_declared: set[str] = set()
+
+    class _Collector(ast.NodeVisitor):
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            return
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            return
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            return
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            return
+
+        def visit_Global(self, node: ast.Global) -> None:
+            global_declared.update(node.names)
+
+        def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+            nonlocal_declared.update(node.names)
+
+        def visit_Name(self, node: ast.Name) -> None:
+            if isinstance(node.ctx, (ast.Store, ast.Del)):
+                blocked.add(node.id)
+
+        def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+            if isinstance(node.name, str):
+                blocked.add(node.name)
+            self.generic_visit(node)
+
+    collector = _Collector()
+    for stmt in body_nodes:
+        collector.visit(stmt)
+    blocked.difference_update(global_declared)
+    blocked.update(nonlocal_declared)
+    return blocked
+
+
+class GlobalNameRedirector(ast.NodeTransformer):
+    def __init__(self, redirect_map: dict[str, str]) -> None:
+        self.redirect_map = redirect_map
+        self.scope_blocked_stack: list[set[str]] = [set()]
+
+    def _is_blocked(self, name: str) -> bool:
+        for scope in reversed(self.scope_blocked_stack[1:]):
+            if name in scope:
+                return True
+        return False
+
+    def visit_Name(self, node: ast.Name) -> ast.AST:
+        if (
+            isinstance(node.ctx, ast.Load)
+            and node.id in self.redirect_map
+            and not self._is_blocked(node.id)
+        ):
+            return ast.copy_location(
+                ast.Call(
+                    func=ast.Name(id=self.redirect_map[node.id], ctx=ast.Load()),
+                    args=[],
+                    keywords=[],
+                ),
+                node,
+            )
+        return node
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
+        node.decorator_list = [self.visit(dec) for dec in node.decorator_list]
+        if node.returns:
+            node.returns = self.visit(node.returns)
+        self.scope_blocked_stack.append(collect_function_blocked_names(node))
+        node.body = [self.visit(stmt) for stmt in node.body]
+        self.scope_blocked_stack.pop()
+        return node
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> ast.AST:
+        node.decorator_list = [self.visit(dec) for dec in node.decorator_list]
+        if node.returns:
+            node.returns = self.visit(node.returns)
+        self.scope_blocked_stack.append(collect_function_blocked_names(node))
+        node.body = [self.visit(stmt) for stmt in node.body]
+        self.scope_blocked_stack.pop()
+        return node
+
+    def visit_Lambda(self, node: ast.Lambda) -> ast.AST:
+        self.scope_blocked_stack.append(collect_function_blocked_names(node))
+        node.body = self.visit(node.body)
+        self.scope_blocked_stack.pop()
+        return node
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
+        node.bases = [self.visit(base) for base in node.bases]
+        node.keywords = [self.visit(kw) for kw in node.keywords]
+        node.decorator_list = [self.visit(dec) for dec in node.decorator_list]
+        new_body: list[ast.stmt] = []
+        for stmt in node.body:
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                new_body.append(self.visit(stmt))
+            else:
+                new_body.append(stmt)
+        node.body = new_body
+        return node
+
+
+def apply_frontline_redirects(
+    tree: ast.AST,
+    config: ObfuscationConfig,
+    rng: random.Random,
+) -> tuple[ast.AST, int]:
+    if not config.frontline_redirects or not isinstance(tree, ast.Module):
+        return tree, 0
+    candidates = collect_frontline_redirect_candidates(tree, config.redirect_kinds, config.preserve_names)
+    if not candidates:
+        return tree, 0
+
+    rng.shuffle(candidates)
+    selected: list[tuple[str, int]] = []
+    for name, idx in candidates:
+        if len(selected) >= config.redirect_max:
+            break
+        if rng.random() <= config.redirect_rate:
+            selected.append((name, idx))
+    if not selected and candidates and config.redirect_rate > 0.0:
+        selected.append(candidates[0])
+    if not selected:
+        return tree, 0
+
+    generator = NameGenerator(collect_identifiers(tree) | config.preserve_names, rng)
+    redirect_map = {name: generator.next_name() for name, _ in selected}
+    redirector = GlobalNameRedirector(redirect_map)
+    tree = redirector.visit(tree)
+    assert isinstance(tree, ast.Module)
+
+    resolver_items = list(redirect_map.items())
+    rng.shuffle(resolver_items)
+    for target_name, alias_name in resolver_items:
+        insert_after_docstring(tree, build_redirect_resolver(alias_name, target_name, rng))
+    return tree, len(redirect_map)
 
 
 def build_string_helper(
@@ -3344,6 +3658,8 @@ def obfuscate_source(
         tree = Renamer(rename_map).visit(tree)
         stats.renamed = len(rename_map)
 
+    tree, stats.redirects = apply_frontline_redirects(tree, config, rng)
+
     if config.strings:
         helper_name_gen = NameGenerator(collect_identifiers(tree), rng)
         helper_specs: list[tuple[str, dict[str, int]]] = []
@@ -3561,6 +3877,7 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
             "setattrs": config.setattrs,
             "calls": config.calls,
             "builtins": config.builtins,
+            "frontline_redirects": config.frontline_redirects,
             "wrap": config.wrap,
         },
         "rates": {
@@ -3573,6 +3890,7 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
             "condition_rate": config.condition_rate,
             "branch_rate": config.branch_rate,
             "loop_rate": config.loop_rate,
+            "redirect_rate": config.redirect_rate,
         },
         "dynamic_methods": {k: list(v) for k, v in config.dynamic_methods.items()},
         "junk": {"count": config.junk, "position": config.junk_position},
@@ -3583,6 +3901,11 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
             "helpers": config.string_helpers,
         },
         "call_helpers": config.call_helpers,
+        "redirects": {
+            "enabled": config.frontline_redirects,
+            "max": config.redirect_max,
+            "kinds": sorted(config.redirect_kinds),
+        },
         "meta_minimal": config.meta_minimal,
         "meta_omit_rename_map": config.meta_omit_rename_map,
         "meta_omit_helper_hints": config.meta_omit_helper_hints,
@@ -3604,6 +3927,7 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
         "condition_rate": config.condition_rate,
         "branch_rate": config.branch_rate,
         "loop_rate": config.loop_rate,
+        "redirect_rate": config.redirect_rate,
         "flow_count": config.flow_count,
         "order": list(config.transform_order),
         "seed": config.seed,
@@ -3628,6 +3952,7 @@ def stats_to_meta(stats: ObfuscationStats) -> dict[str, int]:
         "setattrs": stats.setattrs,
         "calls": stats.calls,
         "builtins": stats.builtins,
+        "redirects": stats.redirects,
         "junk_functions": stats.junk_functions,
     }
 
@@ -4130,7 +4455,9 @@ def explain_config(config: ObfuscationConfig) -> None:
         f"cond_rate={config.condition_rate:.2f}, branch_rate={config.branch_rate:.2f}, "
         f"loop_rate={config.loop_rate:.2f}, flow_count={config.flow_count}, "
         f"str_chunks={config.string_chunk_min}-{config.string_chunk_max}, "
-        f"str_helpers={config.string_helpers}, call_helpers={config.call_helpers}"
+        f"str_helpers={config.string_helpers}, call_helpers={config.call_helpers}, "
+        f"redirects={config.frontline_redirects}, redirect_rate={config.redirect_rate:.2f}, "
+        f"redirect_max={config.redirect_max}, redirect_kinds={','.join(sorted(config.redirect_kinds))}"
     )
     print(
         "Dynamic methods: "
@@ -4197,13 +4524,14 @@ def main() -> int:
         f"bools={config.bools}, imports={config.imports}, conds={config.conditions}, "
         f"loops={config.loops}, flow={config.flow}, attrs={config.attrs}, "
         f"setattrs={config.setattrs}, calls={config.calls}, builtins={config.builtins}, "
+        f"redirects={config.frontline_redirects}, "
         f"wrap={config.wrap}, "
         f"order={','.join(config.transform_order)}) | "
         f"stats(renamed={stats.renamed}, strings={stats.strings}, ints={stats.ints}, "
         f"floats={stats.floats}, bytes={stats.bytes_}, none={stats.none_values}, "
         f"bools={stats.bools}, imports={stats.imports}, conds={stats.conditions}, "
         f"branches={stats.branch_extensions}, loops={stats.loops}, dead_blocks={stats.flow_blocks}, attrs={stats.attrs}, "
-        f"setattrs={stats.setattrs}, calls={stats.calls}, builtins={stats.builtins}, "
+        f"setattrs={stats.setattrs}, calls={stats.calls}, builtins={stats.builtins}, redirects={stats.redirects}, "
         f"junk={stats.junk_functions})"
     )
     return 0
