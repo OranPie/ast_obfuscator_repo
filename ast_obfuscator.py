@@ -192,7 +192,9 @@ class ObfuscationConfig:
     emit_map: Path | None
     emit_meta: Path | None
     meta_include_source: bool
+    meta_minimal: bool
     meta_omit_rename_map: bool
+    meta_omit_helper_hints: bool
     dynamic_methods: dict[str, tuple[str, ...]]
     check: bool
     explain: bool
@@ -2192,10 +2194,22 @@ def parse_args() -> argparse.Namespace:
         help="Include compressed original source in metadata for lossless deobfuscation",
     )
     parser.add_argument(
+        "--meta-minimal",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Emit reduced metadata (omit source payload, rename_map, helper hints)",
+    )
+    parser.add_argument(
         "--meta-omit-rename-map",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Do not include rename_map in metadata (harder best-effort deobf if source payload absent)",
+    )
+    parser.add_argument(
+        "--meta-omit-helper-hints",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Do not include helper_hints in metadata",
     )
     parser.add_argument(
         "--deobf-mode",
@@ -2717,7 +2731,9 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         emit_map=args.emit_map,
         emit_meta=args.emit_meta,
         meta_include_source=args.meta_include_source,
-        meta_omit_rename_map=args.meta_omit_rename_map,
+        meta_minimal=args.meta_minimal,
+        meta_omit_rename_map=(args.meta_omit_rename_map or args.meta_minimal),
+        meta_omit_helper_hints=(args.meta_omit_helper_hints or args.meta_minimal),
         dynamic_methods=resolved_dynamic_methods,
         check=args.check,
         explain=args.explain,
@@ -2926,28 +2942,240 @@ def preserve_shebang(source: str, output: str) -> str:
     return output
 
 
+def _rotate_left_bytes(data: bytes, shift: int) -> bytes:
+    if not data:
+        return data
+    shift = shift % len(data)
+    if shift == 0:
+        return data
+    return data[shift:] + data[:shift]
+
+
 def wrap_source(source: str, rng: random.Random) -> str:
+    def tuple_literal(items: list[str]) -> str:
+        body = ",".join(items)
+        if len(items) == 1:
+            body += ","
+        return f"({body})"
+
+    def encode_segment(segment: bytes) -> tuple[str, bool, list[tuple[str, int]]]:
+        encoded = segment
+        encode_steps: list[tuple[str, int]] = []
+
+        xor_key = rng.randint(1, 255)
+        encoded = bytes((byte ^ xor_key) for byte in encoded)
+        encode_steps.append(("xor", xor_key))
+
+        if rng.random() < 0.65:
+            encoded = encoded[::-1]
+            encode_steps.append(("rev", 0))
+        if rng.random() < 0.55 and len(encoded) > 7:
+            rot = rng.randint(1, min(31, len(encoded) - 1))
+            encoded = _rotate_left_bytes(encoded, rot)
+            encode_steps.append(("rol", rot))
+        if rng.random() < 0.4:
+            xor_key2 = rng.randint(1, 255)
+            encoded = bytes((byte ^ xor_key2) for byte in encoded)
+            encode_steps.append(("xor", xor_key2))
+
+        encoded = zlib.compress(encoded, rng.randint(6, 9))
+        encode_steps.append(("zlib", 0))
+
+        base_codec = rng.choice(("b85", "b64"))
+        if base_codec == "b64":
+            encoded = base64.b64encode(encoded)
+            encode_steps.append(("b64e", 0))
+        else:
+            encoded = base64.b85encode(encoded)
+            encode_steps.append(("b85e", 0))
+
+        payload_text = encoded.decode("ascii")
+        reverse_payload_text = rng.random() < 0.45
+        if reverse_payload_text:
+            payload_text = payload_text[::-1]
+
+        decode_steps: list[tuple[str, int]] = []
+        for name, value in reversed(encode_steps):
+            if name == "b85e":
+                decode_steps.append(("b85d", 0))
+            elif name == "b64e":
+                decode_steps.append(("b64d", 0))
+            elif name == "zlib":
+                decode_steps.append(("unz", 0))
+            elif name == "xor":
+                decode_steps.append(("xor", value))
+            elif name == "rev":
+                decode_steps.append(("rev", 0))
+            elif name == "rol":
+                decode_steps.append(("ror", value))
+        return payload_text, reverse_payload_text, decode_steps
+
     code = compile(source, "<obfuscated>", "exec")
     raw = marshal.dumps(code)
-    key = rng.randint(1, 255)
-    scrambled = bytes((byte ^ key) for byte in raw)
-    payload = base64.b85encode(zlib.compress(scrambled, 9)).decode("ascii")
-    chunks = _split_text_chunks(payload, rng, 16, 64)
+    segment_count = 1 if len(raw) < 4000 else rng.randint(2, 4)
+    if segment_count > 1:
+        split_points = sorted(rng.sample(range(1, len(raw)), segment_count - 1))
+    else:
+        split_points = []
+
+    segments: list[bytes] = []
+    start = 0
+    for stop in split_points + [len(raw)]:
+        segments.append(raw[start:stop])
+        start = stop
+
+    tag_values: dict[str, int] = {}
+    used_tags: set[int] = set()
+    for key in ("b85d", "b64d", "unz", "xor", "rev", "ror"):
+        token = rng.randint(2000, 900000)
+        while token in used_tags:
+            token = rng.randint(2000, 900000)
+        used_tags.add(token)
+        tag_values[key] = token
+
+    segment_chunks: list[list[str]] = []
+    segment_orders: list[list[int]] = []
+    segment_plan_hex: list[str] = []
+    segment_plan_key: list[int] = []
+    segment_plan_rev: list[int] = []
+
+    for segment in segments:
+        payload_text, reverse_payload, decode_steps = encode_segment(segment)
+        chunk_min = max(20, len(payload_text) // 96)
+        chunk_max = max(chunk_min + 16, len(payload_text) // 40)
+        chunks = _split_text_chunks(payload_text, rng, chunk_min, chunk_max)
+        shuffled = list(range(len(chunks)))
+        rng.shuffle(shuffled)
+        shuffled_chunks = [chunks[idx] for idx in shuffled]
+        restore_order = [0] * len(shuffled)
+        for shuffled_pos, original_pos in enumerate(shuffled):
+            restore_order[original_pos] = shuffled_pos
+
+        plan_text = ";".join(f"{tag_values[name]}:{value}" for name, value in decode_steps)
+        plan_key = rng.randint(1, 255)
+        plan_blob = bytes((byte ^ plan_key) for byte in plan_text.encode("utf-8")).hex()
+
+        segment_chunks.append(shuffled_chunks)
+        segment_orders.append(restore_order)
+        segment_plan_hex.append(plan_blob)
+        segment_plan_key.append(plan_key)
+        segment_plan_rev.append(1 if reverse_payload else 0)
+
     alias_b = random_local_identifier(rng)
     alias_z = random_local_identifier(rng)
     alias_m = random_local_identifier(rng)
+    alias_builtin = random_local_identifier(rng)
+    alias_type = random_local_identifier(rng)
+
+    exec_name = random_local_identifier(rng)
+    loads_name = random_local_identifier(rng)
+    parts_name = random_local_identifier(rng)
+    orders_name = random_local_identifier(rng)
+    plan_hex_name = random_local_identifier(rng)
+    plan_key_name = random_local_identifier(rng)
+    plan_rev_name = random_local_identifier(rng)
+    helper_name = random_local_identifier(rng)
     payload_name = random_local_identifier(rng)
-    blob_name = random_local_identifier(rng)
+    plan_blob_name = random_local_identifier(rng)
+    plan_raw_name = random_local_identifier(rng)
+    plan_item_name = random_local_identifier(rng)
+    tag_text_name = random_local_identifier(rng)
+    value_text_name = random_local_identifier(rng)
+    tag_name = random_local_identifier(rng)
+    value_name = random_local_identifier(rng)
+    data_name = random_local_identifier(rng)
+    staging_name = random_local_identifier(rng)
     byte_name = random_local_identifier(rng)
-    key_expr_left = rng.randint(1, 255)
-    key_expr = f"({key_expr_left ^ key} ^ {key_expr_left})"
-    payload_expr = ",".join(repr(chunk) for chunk in chunks)
-    return (
-        f"import base64 as {alias_b}, zlib as {alias_z}, marshal as {alias_m}\n"
-        f"{payload_name} = ''.join(({payload_expr}))\n"
-        f"{blob_name} = {alias_z}.decompress({alias_b}.b85decode({payload_name}))\n"
-        f"exec({alias_m}.loads(bytes(({byte_name} ^ {key_expr}) for {byte_name} in {blob_name})))"
+    shift_name = random_local_identifier(rng)
+    idx_name = random_local_identifier(rng)
+    segment_name = random_local_identifier(rng)
+    blob_parts_name = random_local_identifier(rng)
+    merged_name = random_local_identifier(rng)
+    plan_sep_name = random_local_identifier(rng)
+    kv_sep_name = random_local_identifier(rng)
+    exec_text_name = random_local_identifier(rng)
+    loads_text_name = random_local_identifier(rng)
+    payload_build_style = rng.choice(("gen", "map"))
+
+    lines = [
+        f"import base64 as {alias_b}, zlib as {alias_z}, marshal as {alias_m}",
+        f"{alias_builtin} = __import__('builtins')",
+        f"{alias_type} = type(len)",
+        f"{exec_text_name} = ''.join(('ex', 'ec'))",
+        f"{loads_text_name} = ''.join(('lo', 'ads'))",
+        f"{exec_name} = getattr({alias_builtin}, {exec_text_name})",
+        f"{loads_name} = getattr({alias_m}, {loads_text_name})",
+        f"{parts_name} = []",
+        f"{orders_name} = []",
+        f"{plan_hex_name} = []",
+        f"{plan_key_name} = []",
+        f"{plan_rev_name} = []",
+    ]
+
+    for chunks, order, plan_hex, plan_key, plan_rev in zip(
+        segment_chunks, segment_orders, segment_plan_hex, segment_plan_key, segment_plan_rev
+    ):
+        lines.append(f"{parts_name}.append({tuple_literal([repr(part) for part in chunks])})")
+        lines.append(f"{orders_name}.append({tuple_literal([str(idx) for idx in order])})")
+        lines.append(f"{plan_hex_name}.append({repr(plan_hex)})")
+        lines.append(f"{plan_key_name}.append({plan_key})")
+        lines.append(f"{plan_rev_name}.append({plan_rev})")
+
+    lines.extend(
+        [
+            f"def {helper_name}({payload_name}, {plan_blob_name}, {value_name}, {shift_name}):",
+            f"    {staging_name} = {payload_name}[::-1] if {shift_name} else {payload_name}",
+            f"    {data_name} = {staging_name}.encode('ascii')",
+            f"    {plan_sep_name} = ';'",
+            f"    {kv_sep_name} = ':'",
+            f"    {plan_raw_name} = bytes(({byte_name} ^ {value_name}) for {byte_name} in bytes.fromhex({plan_blob_name})).decode('utf-8')",
+            f"    for {plan_item_name} in {plan_raw_name}.split({plan_sep_name}):",
+            f"        if not {plan_item_name}:",
+            f"            continue",
+            f"        {tag_text_name}, {value_text_name} = {plan_item_name}.split({kv_sep_name}, 1)",
+            f"        {tag_name} = int({tag_text_name})",
+            f"        {value_name} = int({value_text_name})",
+            f"        if {tag_name} == {tag_values['b85d']}:",
+            f"            {data_name} = {alias_b}.b85decode({data_name})",
+            f"        elif {tag_name} == {tag_values['b64d']}:",
+            f"            {data_name} = {alias_b}.b64decode({data_name})",
+            f"        elif {tag_name} == {tag_values['unz']}:",
+            f"            {data_name} = {alias_z}.decompress({data_name})",
+            f"        elif {tag_name} == {tag_values['xor']}:",
+            f"            {data_name} = bytes(({byte_name} ^ {value_name}) for {byte_name} in {data_name})",
+            f"        elif {tag_name} == {tag_values['rev']}:",
+            f"            {data_name} = {data_name}[::-1]",
+            f"        elif {tag_name} == {tag_values['ror']}:",
+            f"            if len({data_name}):",
+            f"                {shift_name} = {value_name} % len({data_name})",
+            f"                if {shift_name}:",
+            f"                    {data_name} = {data_name}[-{shift_name}:] + {data_name}[:-{shift_name}]",
+            f"    return {data_name}",
+            f"{blob_parts_name} = []",
+            f"for {idx_name} in range(len({parts_name})):",
+        ]
     )
+
+    if payload_build_style == "map":
+        lines.append(
+            f"    {segment_name} = ''.join(map({parts_name}[{idx_name}].__getitem__, {orders_name}[{idx_name}]))"
+        )
+    else:
+        lines.append(
+            f"    {segment_name} = ''.join({parts_name}[{idx_name}][j] for j in {orders_name}[{idx_name}])"
+        )
+    lines.extend(
+        [
+            f"    {blob_parts_name}.append({helper_name}({segment_name}, {plan_hex_name}[{idx_name}], {plan_key_name}[{idx_name}], {plan_rev_name}[{idx_name}]))",
+            f"{merged_name} = b''.join({blob_parts_name})",
+            f"if type({exec_name}).__name__ != 'builtin_function_or_method':",
+            "    raise SystemExit(0)",
+            f"if not isinstance({loads_name}, {alias_type}):",
+            "    raise SystemExit(0)",
+            f"{exec_name}({loads_name}({merged_name}))",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def obfuscate_source(
@@ -3200,7 +3428,9 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
             "chunk_min": config.string_chunk_min,
             "chunk_max": config.string_chunk_max,
         },
+        "meta_minimal": config.meta_minimal,
         "meta_omit_rename_map": config.meta_omit_rename_map,
+        "meta_omit_helper_hints": config.meta_omit_helper_hints,
         "int_mode": config.int_mode,
         "float_mode": config.float_mode,
         "bytes_mode": config.bytes_mode,
@@ -3255,6 +3485,9 @@ def build_obfumeta(
     stats: ObfuscationStats,
     helper_hints: dict[str, object] | None = None,
 ) -> dict[str, object]:
+    warnings = list(stats.warnings)
+    if config.meta_minimal:
+        warnings.append("meta-minimal: omitted source payload, rename_map and helper_hints")
     meta: dict[str, object] = {
         "format": "obfumeta-v2",
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -3262,13 +3495,13 @@ def build_obfumeta(
         "stats": stats_to_meta(stats),
         "input_sha256": sha256_text(source),
         "output_sha256": sha256_text(output),
-        "warnings": list(stats.warnings),
+        "warnings": warnings,
     }
     if not config.meta_omit_rename_map:
         meta["rename_map"] = rename_map
-    if helper_hints:
+    if helper_hints and not config.meta_omit_helper_hints:
         meta["helper_hints"] = helper_hints
-    if config.meta_include_source:
+    if config.meta_include_source and not config.meta_minimal:
         meta["original_source_b85_zlib"] = encode_source_payload(source)
     return meta
 

@@ -67,6 +67,8 @@
     "level": 4,
     "loop_mode": "mixed",
     "loop_rate": 0.25,
+    "meta_minimal": false,
+    "meta_omit_helper_hints": false,
     "meta_omit_rename_map": false,
     "none_mode": "mixed",
     "order": [
@@ -104,7 +106,7 @@
       "mode": "mixed"
     }
   },
-  "created_utc": "2026-02-18T06:27:57.678653+00:00",
+  "created_utc": "2026-02-18T06:48:39.121428+00:00",
   "format": "obfumeta-v2",
   "helper_hints": {
     "call_helpers": [
