@@ -1,0 +1,17 @@
+# Full self-obfuscation artifact (uploaded in repo)
+cp ast_obfuscator.py examples/case07_full_self_obf/src.py
+
+python3 ast_obfuscator.py ast_obfuscator.py -o examples/case07_full_self_obf/obf.py \
+  --profile max --level 5 --dynamic-level heavy --seed 1207 --passes 1 --no-wrap \
+  --string-mode split --string-helpers 5 --call-helpers 5 \
+  --value-salt 91 --auto-value-salt --mt-workers 4 \
+  --frontline-redirects --redirect-all \
+  --redirect-class-mode itemgetter --redirect-function-mode lambda --redirect-variable-mode dict_get \
+  --attr-rate 1.0 --setattr-rate 1.0 --call-rate 1.0 --builtin-rate 1.0 \
+  --condition-rate 1.0 --branch-rate 0.9 --flow-rate 1.0 --loop-rate 1.0 --flow-count 2 \
+  --emit-meta examples/case07_full_self_obf/meta.json \
+  --meta-omit-rename-map --meta-omit-helper-hints \
+  --check
+
+# Smoke test
+python3 examples/case07_full_self_obf/obf.py -h | head -n 30
