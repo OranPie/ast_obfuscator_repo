@@ -26,6 +26,10 @@ This folder contains multiple source scripts, their obfuscated outputs, and deob
   - `src.py`, `obf.py`, `deobf.py`, `map.json`, `meta.json`, `config.txt`
   - import obfuscation + condition/branch encoding + loop encoding demo
 
+- `case05_long_redirect_all/`
+  - `src.py`, `obf.py`, `deobf.py`, `map.json`, `meta.json`, `config.txt`
+  - long source + no-wrap + redirect-all with per-type redirect modes
+
 ## Re-generate all examples
 
 ```bash
@@ -41,4 +45,7 @@ python3 ast_obfuscator.py examples/case03_max_dynamic/obf.py -o examples/case03_
 
 python3 ast_obfuscator.py examples/case04_import_cond_loop/src.py -o examples/case04_import_cond_loop/obf.py --profile balanced --level 3 --seed 404 --imports --conditions --loops --import-mode mixed --condition-mode mixed --loop-mode iterator --import-rate 1.0 --condition-rate 0.9 --branch-rate 0.8 --loop-rate 1.0 --emit-map examples/case04_import_cond_loop/map.json --emit-meta examples/case04_import_cond_loop/meta.json --no-wrap --check
 python3 ast_obfuscator.py examples/case04_import_cond_loop/obf.py -o examples/case04_import_cond_loop/deobf.py --deobfuscate --meta examples/case04_import_cond_loop/meta.json --deobf-mode best-effort
+
+python3 ast_obfuscator.py examples/case05_long_redirect_all/src.py -o examples/case05_long_redirect_all/obf.py --profile max --level 5 --seed 505 --no-wrap --dynamic-level heavy --passes 3 --string-mode split --string-helpers 5 --call-helpers 5 --frontline-redirects --redirect-all --redirect-class-mode itemgetter --redirect-function-mode lambda --redirect-variable-mode dict_get --attr-rate 1.0 --setattr-rate 1.0 --call-rate 1.0 --builtin-rate 1.0 --condition-rate 1.0 --branch-rate 0.9 --flow-rate 1.0 --loop-rate 1.0 --flow-count 2 --emit-map examples/case05_long_redirect_all/map.json --emit-meta examples/case05_long_redirect_all/meta.json --meta-omit-rename-map --meta-omit-helper-hints --check
+python3 ast_obfuscator.py examples/case05_long_redirect_all/obf.py -o examples/case05_long_redirect_all/deobf.py --deobfuscate --meta examples/case05_long_redirect_all/meta.json --deobf-mode best-effort
 ```

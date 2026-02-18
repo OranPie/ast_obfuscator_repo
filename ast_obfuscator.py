@@ -13,6 +13,8 @@ Features
   `--branch-rate`, `--loop-rate`, `--attr-rate`, `--flow-rate`, `--flow-count`)
 - Helper multiplicity (`--string-helpers`, `--call-helpers`)
 - Frontline symbol redirects (`--frontline-redirects`, `--redirect-rate`, `--redirect-max`, `--redirect-kinds`)
+- Redirect presets + per-kind resolver modes (`--redirect-all`, `--redirect-class-mode`,
+  `--redirect-function-mode`, `--redirect-variable-mode`)
 - Multiple transformation passes (`--passes`)
 - Junk function injection (`--junk`, `--junk-position`)
 - Deterministic builds (`--seed`)
@@ -175,9 +177,13 @@ class ObfuscationConfig:
     loop_mode: str
     attr_mode: str
     frontline_redirects: bool
+    redirect_all: bool
     redirect_rate: float
     redirect_max: int
     redirect_kinds: set[str]
+    redirect_class_mode: str
+    redirect_function_mode: str
+    redirect_variable_mode: str
     import_rate: float
     flow_rate: float
     condition_rate: float
@@ -2186,6 +2192,30 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated redirect symbol kinds: class,function,variable",
     )
     parser.add_argument(
+        "--redirect-all",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Force redirect of all eligible frontline symbols (implies redirects on, rate=1.0)",
+    )
+    parser.add_argument(
+        "--redirect-class-mode",
+        choices=("mixed", "lambda", "globals_get", "dict_get", "itemgetter"),
+        default="mixed",
+        help="Resolver mode for redirected class symbols",
+    )
+    parser.add_argument(
+        "--redirect-function-mode",
+        choices=("mixed", "lambda", "globals_get", "dict_get", "itemgetter"),
+        default="mixed",
+        help="Resolver mode for redirected function symbols",
+    )
+    parser.add_argument(
+        "--redirect-variable-mode",
+        choices=("mixed", "lambda", "globals_get", "dict_get", "itemgetter"),
+        default="mixed",
+        help="Resolver mode for redirected variable symbols",
+    )
+    parser.add_argument(
         "--none-mode",
         choices=("mixed", "lambda", "ifexpr"),
         default="mixed",
@@ -2443,8 +2473,12 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "string_helpers": 2,
             "call_helpers": 2,
             "frontline_redirects": True,
+            "redirect_all": False,
             "redirect_rate": 0.75,
             "redirect_max": 16,
+            "redirect_class_mode": "mixed",
+            "redirect_function_mode": "mixed",
+            "redirect_variable_mode": "mixed",
         },
         "stealth": {
             "rename": True,
@@ -2479,8 +2513,12 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "string_helpers": 2,
             "call_helpers": 2,
             "frontline_redirects": True,
+            "redirect_all": False,
             "redirect_rate": 0.45,
             "redirect_max": 10,
+            "redirect_class_mode": "mixed",
+            "redirect_function_mode": "mixed",
+            "redirect_variable_mode": "mixed",
         },
         "max": {
             "rename": True,
@@ -2515,8 +2553,12 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "string_helpers": 4,
             "call_helpers": 4,
             "frontline_redirects": True,
+            "redirect_all": False,
             "redirect_rate": 1.0,
             "redirect_max": 48,
+            "redirect_class_mode": "itemgetter",
+            "redirect_function_mode": "lambda",
+            "redirect_variable_mode": "dict_get",
         },
     }
     return profiles[profile]
@@ -2677,6 +2719,9 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         if args.frontline_redirects is None
         else args.frontline_redirects
     )
+    redirect_all = bool(args.redirect_all)
+    if "--redirect-all" not in sys.argv and "--no-redirect-all" not in sys.argv:
+        redirect_all = bool(prof.get("redirect_all", redirect_all))
 
     preserve_names = {name.strip() for name in args.preserve.split(",") if name.strip()}
     preserve_names.update({"__name__", "__file__", "__package__", "__spec__"})
@@ -2713,6 +2758,9 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
     redirect_rate = float(prof.get("redirect_rate", args.redirect_rate))
     redirect_max = int(prof.get("redirect_max", args.redirect_max))
     redirect_kinds = parse_redirect_kinds(args.redirect_kinds)
+    redirect_class_mode = str(prof.get("redirect_class_mode", args.redirect_class_mode))
+    redirect_function_mode = str(prof.get("redirect_function_mode", args.redirect_function_mode))
+    redirect_variable_mode = str(prof.get("redirect_variable_mode", args.redirect_variable_mode))
     string_helpers = int(prof.get("string_helpers", args.string_helpers))
     call_helpers = int(prof.get("call_helpers", args.call_helpers))
 
@@ -2743,6 +2791,12 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         redirect_max = args.redirect_max
     if "--redirect-kinds" in sys.argv:
         redirect_kinds = parse_redirect_kinds(args.redirect_kinds)
+    if "--redirect-class-mode" in sys.argv:
+        redirect_class_mode = args.redirect_class_mode
+    if "--redirect-function-mode" in sys.argv:
+        redirect_function_mode = args.redirect_function_mode
+    if "--redirect-variable-mode" in sys.argv:
+        redirect_variable_mode = args.redirect_variable_mode
     if "--string-helpers" in sys.argv:
         string_helpers = args.string_helpers
     if "--call-helpers" in sys.argv:
@@ -2784,6 +2838,11 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         raise ValueError("--string-chunk-min must be <= --string-chunk-max")
     if args.deobfuscate and args.meta is None:
         raise ValueError("--meta is required with --deobfuscate")
+    if redirect_all:
+        frontline_redirects = True
+        redirect_rate = 1.0
+        redirect_max = max(redirect_max, 1_000_000)
+        redirect_kinds = {"class", "function", "variable"}
 
     transform_order = parse_transform_order(args.order)
 
@@ -2842,9 +2901,13 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         loop_mode=args.loop_mode,
         attr_mode=args.attr_mode,
         frontline_redirects=frontline_redirects,
+        redirect_all=redirect_all,
         redirect_rate=redirect_rate,
         redirect_max=redirect_max,
         redirect_kinds=redirect_kinds,
+        redirect_class_mode=redirect_class_mode,
+        redirect_function_mode=redirect_function_mode,
+        redirect_variable_mode=redirect_variable_mode,
         import_rate=import_rate,
         flow_rate=flow_rate,
         condition_rate=condition_rate,
@@ -2947,71 +3010,148 @@ def collect_frontline_redirect_candidates(
     module: ast.Module,
     kinds: set[str],
     preserve_names: set[str],
-) -> list[tuple[str, int]]:
-    raw: list[tuple[str, int]] = []
+) -> list[tuple[str, str, int]]:
+    raw: list[tuple[str, str, int]] = []
     for idx, stmt in enumerate(module.body):
         if "function" in kinds and isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            raw.append((stmt.name, idx))
+            raw.append((stmt.name, "function", idx))
             continue
         if "class" in kinds and isinstance(stmt, ast.ClassDef):
-            raw.append((stmt.name, idx))
+            raw.append((stmt.name, "class", idx))
             continue
         if "variable" in kinds and isinstance(stmt, ast.Assign):
             if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
-                raw.append((stmt.targets[0].id, idx))
+                raw.append((stmt.targets[0].id, "variable", idx))
             continue
         if "variable" in kinds and isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
-            raw.append((stmt.target.id, idx))
+            raw.append((stmt.target.id, "variable", idx))
 
     counts: dict[str, int] = {}
-    for name, _ in raw:
+    for name, _, _ in raw:
         counts[name] = counts.get(name, 0) + 1
     return [
-        (name, idx)
-        for name, idx in raw
+        (name, kind, idx)
+        for name, kind, idx in raw
         if counts.get(name, 0) == 1 and _is_redirectable_symbol(name, preserve_names)
     ]
 
 
-def build_redirect_resolver(alias_name: str, target_name: str, rng: random.Random) -> ast.Assign:
-    globals_arg = random_local_identifier(rng)
-    name_arg = random_local_identifier(rng)
-    helper_factory = ast.Lambda(
-        args=ast.arguments(
-            posonlyargs=[],
-            args=[ast.arg(arg=globals_arg), ast.arg(arg=name_arg)],
-            kwonlyargs=[],
-            kw_defaults=[],
-            defaults=[],
-        ),
-        body=ast.Lambda(
+def pick_redirect_mode(kind: str, config: ObfuscationConfig, rng: random.Random) -> str:
+    mode_map = {
+        "class": config.redirect_class_mode,
+        "function": config.redirect_function_mode,
+        "variable": config.redirect_variable_mode,
+    }
+    chosen = mode_map.get(kind, "mixed")
+    if chosen == "mixed":
+        return rng.choice(("lambda", "globals_get", "dict_get", "itemgetter"))
+    return chosen
+
+
+def build_redirect_resolver(alias_name: str, target_name: str, mode: str, rng: random.Random) -> ast.Assign:
+    globals_name = random_local_identifier(rng)
+    name_name = random_local_identifier(rng)
+    globals_call = ast.Call(func=ast.Name(id=globals_name, ctx=ast.Load()), args=[], keywords=[])
+    target_name_expr = build_text_expr(target_name, rng)
+
+    if mode == "itemgetter":
+        resolver_body: ast.expr = ast.Call(
+            func=ast.Call(
+                func=ast.Attribute(
+                    value=ast.Call(
+                        func=ast.Name(id="__import__", ctx=ast.Load()),
+                        args=[build_text_expr("operator", rng)],
+                        keywords=[],
+                    ),
+                    attr="itemgetter",
+                    ctx=ast.Load(),
+                ),
+                args=[target_name_expr],
+                keywords=[],
+            ),
+            args=[globals_call],
+            keywords=[],
+        )
+    elif mode == "dict_get":
+        resolver_body = ast.Call(
+            func=ast.Attribute(value=globals_call, attr="get", ctx=ast.Load()),
+            args=[target_name_expr],
+            keywords=[],
+        )
+    elif mode == "globals_get":
+        resolver_body = ast.Subscript(
+            value=globals_call,
+            slice=target_name_expr,
+            ctx=ast.Load(),
+        )
+    else:
+        resolver_body = ast.Call(
+            func=ast.Attribute(value=globals_call, attr="get", ctx=ast.Load()),
+            args=[target_name_expr],
+            keywords=[],
+        )
+
+    if mode == "lambda":
+        helper_factory: ast.expr = ast.Lambda(
             args=ast.arguments(
                 posonlyargs=[],
-                args=[],
+                args=[ast.arg(arg=globals_name), ast.arg(arg=name_name)],
                 kwonlyargs=[],
                 kw_defaults=[],
                 defaults=[],
             ),
-            body=ast.Call(
-                func=ast.Attribute(
-                    value=ast.Call(
-                        func=ast.Name(id=globals_arg, ctx=ast.Load()),
-                        args=[],
-                        keywords=[],
-                    ),
-                    attr="get",
-                    ctx=ast.Load(),
+            body=ast.Lambda(
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[],
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    defaults=[],
                 ),
-                args=[ast.Name(id=name_arg, ctx=ast.Load())],
-                keywords=[],
+                body=ast.Call(
+                    func=ast.Attribute(
+                        value=ast.Call(
+                            func=ast.Name(id=globals_name, ctx=ast.Load()),
+                            args=[],
+                            keywords=[],
+                        ),
+                        attr="get",
+                        ctx=ast.Load(),
+                    ),
+                    args=[ast.Name(id=name_name, ctx=ast.Load())],
+                    keywords=[],
+                ),
             ),
-        ),
-    )
+        )
+    else:
+        helper_factory = ast.Lambda(
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg=globals_name)],
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=ast.Lambda(
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[],
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    defaults=[],
+                ),
+                body=resolver_body,
+            ),
+        )
+
+    helper_args: list[ast.expr] = [ast.Name(id="globals", ctx=ast.Load())]
+    if mode == "lambda":
+        helper_args.append(build_text_expr(target_name, rng))
     return ast.Assign(
         targets=[ast.Name(id=alias_name, ctx=ast.Store())],
         value=ast.Call(
             func=helper_factory,
-            args=[ast.Name(id="globals", ctx=ast.Load()), build_text_expr(target_name, rng)],
+            args=helper_args,
             keywords=[],
         ),
     )
@@ -3155,27 +3295,28 @@ def apply_frontline_redirects(
         return tree, 0
 
     rng.shuffle(candidates)
-    selected: list[tuple[str, int]] = []
-    for name, idx in candidates:
+    selected: list[tuple[str, str, int]] = []
+    for name, kind, idx in candidates:
         if len(selected) >= config.redirect_max:
             break
         if rng.random() <= config.redirect_rate:
-            selected.append((name, idx))
+            selected.append((name, kind, idx))
     if not selected and candidates and config.redirect_rate > 0.0:
         selected.append(candidates[0])
     if not selected:
         return tree, 0
 
     generator = NameGenerator(collect_identifiers(tree) | config.preserve_names, rng)
-    redirect_map = {name: generator.next_name() for name, _ in selected}
+    redirect_map = {name: generator.next_name() for name, _, _ in selected}
     redirector = GlobalNameRedirector(redirect_map)
     tree = redirector.visit(tree)
     assert isinstance(tree, ast.Module)
 
-    resolver_items = list(redirect_map.items())
+    resolver_items = [(name, kind, redirect_map[name]) for name, kind, _ in selected]
     rng.shuffle(resolver_items)
-    for target_name, alias_name in resolver_items:
-        insert_after_docstring(tree, build_redirect_resolver(alias_name, target_name, rng))
+    for target_name, kind, alias_name in resolver_items:
+        mode = pick_redirect_mode(kind, config, rng)
+        insert_after_docstring(tree, build_redirect_resolver(alias_name, target_name, mode, rng))
     return tree, len(redirect_map)
 
 
@@ -3903,8 +4044,12 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
         "call_helpers": config.call_helpers,
         "redirects": {
             "enabled": config.frontline_redirects,
+            "all": config.redirect_all,
             "max": config.redirect_max,
             "kinds": sorted(config.redirect_kinds),
+            "class_mode": config.redirect_class_mode,
+            "function_mode": config.redirect_function_mode,
+            "variable_mode": config.redirect_variable_mode,
         },
         "meta_minimal": config.meta_minimal,
         "meta_omit_rename_map": config.meta_omit_rename_map,
@@ -4457,7 +4602,9 @@ def explain_config(config: ObfuscationConfig) -> None:
         f"str_chunks={config.string_chunk_min}-{config.string_chunk_max}, "
         f"str_helpers={config.string_helpers}, call_helpers={config.call_helpers}, "
         f"redirects={config.frontline_redirects}, redirect_rate={config.redirect_rate:.2f}, "
-        f"redirect_max={config.redirect_max}, redirect_kinds={','.join(sorted(config.redirect_kinds))}"
+        f"redirect_max={config.redirect_max}, redirect_kinds={','.join(sorted(config.redirect_kinds))}, "
+        f"redirect_all={config.redirect_all}, redirect_modes="
+        f"{config.redirect_class_mode}/{config.redirect_function_mode}/{config.redirect_variable_mode}"
     )
     print(
         "Dynamic methods: "
@@ -4524,7 +4671,8 @@ def main() -> int:
         f"bools={config.bools}, imports={config.imports}, conds={config.conditions}, "
         f"loops={config.loops}, flow={config.flow}, attrs={config.attrs}, "
         f"setattrs={config.setattrs}, calls={config.calls}, builtins={config.builtins}, "
-        f"redirects={config.frontline_redirects}, "
+        f"redirects={config.frontline_redirects}, redirect_all={config.redirect_all}, "
+        f"redirect_modes={config.redirect_class_mode}/{config.redirect_function_mode}/{config.redirect_variable_mode}, "
         f"wrap={config.wrap}, "
         f"order={','.join(config.transform_order)}) | "
         f"stats(renamed={stats.renamed}, strings={stats.strings}, ints={stats.ints}, "

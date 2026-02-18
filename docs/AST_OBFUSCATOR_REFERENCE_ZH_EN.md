@@ -130,9 +130,13 @@ Resolution order:
 - `--string-helpers N` (number of emitted string decode helpers)
 - `--call-helpers N` (number of emitted call wrapper helpers)
 - `--[no-]frontline-redirects` (redirect top-level class/function/variable loads via generated resolvers)
+- `--[no-]redirect-all` (force redirect of all eligible frontline symbols)
 - `--redirect-rate 0.0..1.0`
 - `--redirect-max N`
 - `--redirect-kinds class,function,variable`
+- `--redirect-class-mode {mixed,lambda,globals_get,dict_get,itemgetter}`
+- `--redirect-function-mode {mixed,lambda,globals_get,dict_get,itemgetter}`
+- `--redirect-variable-mode {mixed,lambda,globals_get,dict_get,itemgetter}`
 
 ### Metadata / deobfuscation
 - `--emit-map path.json`
@@ -224,6 +228,16 @@ python3 ast_obfuscator.py app.py -o app.obf.py \
 
 python3 ast_obfuscator.py app.obf.py -o app.restore.py \
   --deobfuscate --meta app.meta.json --deobf-mode strict
+```
+
+### F. 全量前线重定向 + 分类型模式 / Full frontline redirects + per-type modes
+```bash
+python3 ast_obfuscator.py app.py -o app.obf.py \
+  --no-wrap --frontline-redirects --redirect-all \
+  --redirect-class-mode itemgetter \
+  --redirect-function-mode lambda \
+  --redirect-variable-mode dict_get \
+  --check --explain
 ```
 
 ---
