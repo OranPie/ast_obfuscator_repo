@@ -1,54 +1,96 @@
-_o11IOOo1 = bool
-_O1OIOI1l0Il = bytes
-_l1ollIl0ooOlI = __import__('builtins').chr
-_loo0IOO = dict
-_ll101lo = int
-_lI010I0O1l0 = __import__('builtins').object
-_oO10loo = __import__('builtins').print
-_O1l1OOl01IOI0 = __import__('builtins').str
+_lo0OOoI01I11 = __import__(bytes.fromhex('6275696c74696e73').decode('utf-8')).bool
+_lo1I010l = __import__('{0}{3}{2}{1}'.format('bui', 's', 'n', 'lti')).bytes
+_lIIOlIO1lOIoO = __import__(bytes.fromhex('6275696c74696e73').decode('utf-8')).chr
+_lllo01l0IlIl = __import__(bytes.fromhex('6275696c74696e73').decode('utf-8')).dict
+_ooIlllI0O0oO = __import__('buil' + 'tin' + 's').__dict__.get('geta' + 'tt' + 'r', __import__('buil' + 'tin' + 's').getattr)
+_IOOO1010I0OOI = __import__('{2}{0}{1}{3}'.format('il', 'tin', 'bu', 's')).__dict__.get(''.join(('i', 'nt')), __import__('{2}{0}{1}{3}'.format('il', 'tin', 'bu', 's')).int)
+_Oloo01OO = __import__('b' + 'u' + 'ilt' + 'in' + 's').map
+_O1010111OO = __import__('{0}{3}{1}{2}'.format('bu', 'lti', 'ns', 'i')).object
+_ll11l01O011l0 = __import__('bui' + 'l' + 't' + 'i' + 'ns').print
+_OlIl1101oIoIo = __import__('{0}{2}{3}{1}'.format('bui', 's', 'lt', 'in')).setattr
+_o0o0O0O0 = __import__(bytes.fromhex('6275696c74696e73').decode('utf-8')).str
 
-def _o0IlolI0I1ll(_O6186b, _a9bO234b1o5, _zoy136):
-    return _O6186b(*_a9bO234b1o5, **_zoy136)
+def _o00O1OO1oOI(_z8x2_z, _o9zx3767x7, _o5b4az1c864O):
+    return _z8x2_z(*_o9zx3767x7, **_o5b4az1c864O)
 
-def _Il0Ioo00O(__5z__a7b74, _xIlb1_4):
-    if __5z__a7b74 == 391058 ^ 23923:
-        return ''.join((''.join((_l1ollIl0ooOlI(c ^ key) for c in data)) for key, data in _xIlb1_4))
-    if __5z__a7b74 == 434500 - 250 + 0:
+def _ooI1IIoOI0(_boIcx0I0, _O824z6, _o10l054):
+    _byI17zO0 = _boIcx0I0
+    _xblbI2z1_3 = _O824z6
+    _y0b952xc6 = _o10l054
+    return _byI17zO0(*_xblbI2z1_3, **_y0b952xc6)
+
+def _lO0IOolol(_azo2a13O_bza, _O421xyyl7, _cazx4yy5c92):
+    return (lambda _f, _a, _k: _f(*_a, **_k))(_azo2a13O_bza, _O421xyyl7, _cazx4yy5c92)
+
+def _Il0Ioo00O(_oxbIx38y, _olOO5OI02):
+    import base64
+    _acyl1xIc07 = _oxbIx38y
+    _yc60ac1__ = _olOO5OI02
+    _l6aloa9x3 = {2407 + 387681 ^ 1029 + 21796: lambda _p: _o00O1OO1oOI(''.join, ((_lO0IOolol(_o00O1OO1oOI(lambda _o50c67lIoO_, _I9l85ycyx3O, _Ixx_x4c75bl: _o50c67lIoO_(*_I9l85ycyx3O, **_Ixx_x4c75bl), (_ooI1IIoOI0(_ooI1IIoOI0(__import__('operator').attrgetter(''.join((_lO0IOolol(chr, (_c,), {}) for _c in (580 - 483 + 0, 691 - 575 + 0, 12026 ^ 11918, 20644 ^ 20694, 604 - 501 + 0, 4052 + -3951, 617 - 501 + 0, 833 - 717 + 0, 6575 ^ 6602, -4214 + 4328)))), (_lO0IOolol(lambda _l06blc73lz3O, _c757II27y98, _z4y0I9z: _l06blc73lz3O(*_c757II27y98, **_z4y0I9z), (__import__, ('operator',), {}), {}),), {}), (__import__('operator').attrgetter('jo' + 'i' + 'n')('')(('j', 'oi', 'n')),), {}), ('',), {}), {}), ((_lIIOlIO1lOIoO(c ^ key) for c in data),), {}) for key, data in _p),), {}), (12816 ^ 15063) + (-1992 + 433995): lambda _p: (lambda _bb5zoybb21O, _a2lboxII9, _b28z78z6_: _bb5zoybb21O(*_a2lboxII9, **_b28z78z6_))(_ooI1IIoOI0(_ooIlllI0O0oO, (_o00O1OO1oOI(_ooI1IIoOI0(_lO0IOolol(__import__, ('operator',), {}).attrgetter, ('at' + 'trg' + 'ett' + 'e' + 'r',), {}), (__import__('operator'),), {})('b' + '8' + '5de' + 'c' + 'o' + 'd' + 'e')(base64)((lambda _xO7x2o8b1, _lc0c17O8, _cy77yxb1yx2c: _xO7x2o8b1(*_lc0c17O8, **_cy77yxb1yx2c))(_lO0IOolol(_ooI1IIoOI0(__import__('builtins').getattr(_o00O1OO1oOI(lambda _ozO8344, ___l7byzI10, _l0b4a40a0_: (lambda *_ol9y84, **__x21z98z1: _ozO8344(*_ol9y84, **__x21z98z1))(*___l7byzI10, **_l0b4a40a0_), (__import__, ('operator',), {}), {}), ''.join(('attr', 'get', 'te', 'r'))), (_o00O1OO1oOI(__import__, ('builtins',), {}).getattr('', _lo1I010l.fromhex('6a6f696e').decode('utf-8'))(((lambda __Izcx7oz48o, _l28233x, _yc2a37y6215a: __Izcx7oz48o(*_l28233x, **_yc2a37y6215a))(chr, (_c,), {}) for _c in (2016 + -1711 - (538 - 334 + 0) + (464 - 464 + 0), -2041 - 136 + 0 + (2863 + -576), 20158 - 7 + 0 ^ (29054 ^ 16298), 1294 + 28379 ^ -167 + 29741, -2287 - 852 + 0 + (3438 - 199 + 0), -2171 - 609 + 0 + (3243 - 362 + 0)))),), {}), (_p,), {}), ('ascii',), {})), _o00O1OO1oOI((lambda _a5allbb5o3, _yz3aa1oO, _I4lx3o1b40: _a5allbb5o3(*_yz3aa1oO, **_I4lx3o1b40))(_o00O1OO1oOI(_lO0IOolol(__import__, ('builtins',), {}).getattr, (_lo1I010l, ''.join(('f', 'romh', 'ex'))), {}), ('6465636f6465',), {}).decode, ('utf-8',), {})), {}), ('utf-8',), {}), (185030 ^ 20477) - (27494 ^ 26928) + (821 - 821 + 0): lambda _p: _p[::-(26548 ^ 9525 ^ (1373 ^ 18397))]}
+    return _ooI1IIoOI0((lambda _o, _n: _ooIlllI0O0oO(_o, _n))(_l6aloa9x3, 'g' + 'e' + 't'), (_acyl1xIc07, _l6aloa9x3[-3099 + 174495 - (1598 + -927) + (4250 ^ 4250)]), {})(_yc60ac1__)
+
+def _IOOlI0Oll10(_b9zb482, _c28y77cO):
+    if _O1010111OO() is object():
+        804 == 825 or 547 != 547
+    if (lambda _v: _lO0IOolol(_lo0OOoI01I11, (_v,), {}))(_b9zb482 == 425263 ^ 19887 ^ -3526 + 28136):
+        return _o00O1OO1oOI(lambda _o, _n: _o00O1OO1oOI(lambda _bo5l8oy, _c62b_bz0, _a7_0cyal6: _bo5l8oy(*_c62b_bz0, **_a7_0cyal6), (_ooIlllI0O0oO, (_o, _n), {}), {}), ('', _ooI1IIoOI0(_ooIlllI0O0oO('', bytes.fromhex('6a6f696e').decode('utf-8')), (('joi', 'n'),), {})), {})((_lO0IOolol(lambda _zI421l_1yo6, _O1a8l42a6OlO, _oO2O57l: _zI421l_1yo6(*_O1a8l42a6OlO, **_oO2O57l), (_ooI1IIoOI0(__import__('builtins').getattr, (_o00O1OO1oOI(__import__, ('builtins',), {}), '{2}{0}{1}'.format('att', 'r', 'get')), {}), ('', _ooI1IIoOI0(_ooIlllI0O0oO(_lo1I010l.fromhex('6a6f696e'), ''.join(('de', 'c', 'od', 'e'))), ('utf-8',), {})), {}), {})((_lIIOlIO1lOIoO(c ^ key) for c in data)) for key, data in _c28y77cO))
+    elif (lambda _c163b1c4: _c163b1c4 is _O1010111OO())(_O1010111OO()):
+        (-1268 + 9175 ^ -4443 + 4545) + (424 - 424 + 0)
+        2137 + -1933 if 14822 ^ 14634 == 1163 - 951 + 0 else 408 - 196 + 0
+    if (lambda _v: _lo0OOoI01I11(_v))(_b9zb482 == -1810 + 609850 ^ 1913 + 27829):
         import base64
-        return __import__('operator').attrgetter(''.join((_l1ollIl0ooOlI(_c) for _c in (307 - 207 + 0, 2472 + -2371, -446 + 545, 265 - 154 + 0, 291 ^ 327, 12242 ^ 12215))))(__import__('operator').attrgetter(bytes.fromhex('6238356465636f6465').decode('utf-8'))(base64)(__import__('operator').attrgetter(''.join(('en', 'code')))(_xIlb1_4)('ascii')))('utf-8')
-    elif (lambda _c4O7x2o8: _c4O7x2o8 is object())(_lI010I0O1l0()):
-        (4829 - 875 + 0, 25732 ^ 27506)[713 - 713 + 0 if 4802 - 848 + 0 == -371 + 4457 else 9866 ^ 9867]
-        (9448 - 716 + 0, 13674 ^ 6137)[28039 ^ 28039 if -3371 + 12103 == 8855 - 4 + 0 else 23011 ^ 23010]
-    return _xIlb1_4[::-(30484 ^ 30485)]
-_Il0Ioo00O(434499 - 249 + 0, 'Lt%4eATTmIAaitOVQh40AY*J{b8{_dWnp%CAah}DaBO8R')
+        return _o00O1OO1oOI(lambda _b21ac4yy71y, _bb1O_yl46, _llz7775_9z7_: _b21ac4yy71y(*_bb1O_yl46, **_llz7775_9z7_), ((lambda _z9o9zoxx2_3, _ycy5Ob70_8, _axcx08ayl: _z9o9zoxx2_3(*_ycy5Ob70_8, **_axcx08ayl))(__import__('builtins').getattr, (_lO0IOolol(__import__('operator').attrgetter(_o00O1OO1oOI(''.join, (('b85d', 'eco', 'd', 'e'),), {})), (base64,), {})(_lO0IOolol(lambda _I5l5_5O9Iy, _I0b1axc, _l62304boy: _I5l5_5O9Iy(*_I0b1axc, **_l62304boy), (getattr, (_c28y77cO, _ooI1IIoOI0(lambda __8Oa0y13484, _y637l78Ix6, _b7xa4yIo41lc: __8Oa0y13484(*_y637l78Ix6, **_b7xa4yIo41lc), ((lambda _I_2b55659398, __I3lOx, _oc1l8x539l0c: _I_2b55659398(*__I3lOx, **_oc1l8x539l0c))(_lo1I010l.fromhex, ('656e636f6465',), {}).decode, ('utf-8',), {}), {})), {}), {})('ascii')), _lO0IOolol(__import__('operator').attrgetter(''.join(('jo', 'in')))(''), ((_ooI1IIoOI0(_lIIOlIO1lOIoO, (_c,), {}) for _c in (-3737 + 4591 - (4946 ^ 4512) + (2131 + -2131), 1123 - 812 + 0 - (671 - 461 + 0) + (638 - 638 + 0), 939 - 144 + 0 - (-1725 + 2421) + (563 - 563 + 0), 26294 - 97 + 0 ^ (17655 ^ 8909), 1026 + -3239 + (11652 ^ 9357), -3502 - 113 + 0 + (3897 - 181 + 0))),), {})), {}), ('utf-8',), {}), {})
+    return _c28y77cO[::-(3931 + -2959 - (3391 + -2420) + (563 - 563 + 0))]
 
-class Wallet:
+def _l1IO01o1O(_lIz20a, _I2I841azy7):
+    import base64
+    _Ocyc314_ = _lIz20a
+    _ozcl_64cc7l = _I2I841azy7
+    _bcO69x0z = {691702 - 533 + 0 - (-1847 + 2323) + (1544 ^ 1544): lambda _p: _o00O1OO1oOI(__import__('operator').attrgetter(''.join(('joi', 'n'))), ('',), {})((_o00O1OO1oOI(_lO0IOolol(_ooIlllI0O0oO, ('', 'j' + 'oi' + 'n'), {}), (((lambda _oOly832x_7, _yoo0a9bII, _azb41z018: (lambda *_bco0ycx, **_ay0b_8xbO014: _oOly832x_7(*_bco0ycx, **_ay0b_8xbO014))(*_yoo0a9bII, **_azb41z018))(chr, (c ^ key,), {}) for c in data),), {}) for key, data in _p)), 5640 - 946 + 0 + (683412 - 334 + 0): lambda _p: _o00O1OO1oOI(_o00O1OO1oOI(__import__('builtins').getattr(__import__('operator'), '{2}{1}{4}{3}{0}'.format('r', 'rg', 'att', 'tte', 'e')), (_lO0IOolol(__import__('builtins').getattr, (__import__('builtins').getattr(_lo1I010l, ''.join((_o00O1OO1oOI(_lIIOlIO1lOIoO, (_c,), {}) for _c in (-3739 + 3841, 26130 ^ 26208, 625 - 514 + 0, -877 + 986, 10264 ^ 10352, 266 - 165 + 0, -493 + 613))))('6465636f6465'), _ooI1IIoOI0(_lo1I010l.fromhex('6465636f6465').decode, ('utf-8',), {})), {})('utf-8'),), {}), (_ooI1IIoOI0(_ooIlllI0O0oO, (base64, (lambda _o, _n: _o00O1OO1oOI(getattr, (_o, _n), {}))(_lO0IOolol(lambda _y_lxy070, _O4b0x_1a9, _b3_81zl: (lambda *_xbOabx_5b, **_o204x1l2: _y_lxy070(*_xbOabx_5b, **_o204x1l2))(*_O4b0x_1a9, **_b3_81zl), (_ooIlllI0O0oO(_lo1I010l, ''.join(('fr', 'omhe', 'x'))), ('6238356465636f6465',), {}), {}), ''.join(('de', 'c', 'o', 'd', 'e')))('utf-8')), {})((lambda _I77713I_, _axbx1l7c9O2y, _o4OOlI: (lambda *_z9o4431l7ol, **_a1a1cl1abbb: _I77713I_(*_z9o4431l7ol, **_a1a1cl1abbb))(*_axbx1l7c9O2y, **_o4OOlI))(_ooIlllI0O0oO, (_p, _ooI1IIoOI0(lambda _b_4yo2, _z11lb_Oo, _aaOb0347bl7I: _b_4yo2(*_z11lb_Oo, **_aaOb0347bl7I), (__import__('operator').attrgetter(_lO0IOolol('{0}{1}'.format, ('jo', 'in'), {}))(''), (('e', 'n', 'code'),), {}), {})), {})('ascii')),), {})('utf-8'), 132121 - 394 + 0 ^ (17397 ^ 25137): lambda _p: _p[::-(25554 - 405 + 0 ^ -1072 + 26220)]}
+    return _lO0IOolol(lambda _zcOb9l0b1I53, _c0aObzxo, _o7IO7_5yx: _zcOb9l0b1I53(*_c0aObzxo, **_o7IO7_5yx), (_ooI1IIoOI0(lambda _o, _n: (lambda _IO61o_, _za37cc7, _x3cb4a2cz90_: _IO61o_(*_za37cc7, **_x3cb4a2cz90_))(getattr, (_o, _n), {}), (_bcO69x0z, _lO0IOolol(lambda _o, _n: _ooIlllI0O0oO(_o, _n), ('', 'joi' + 'n'), {})(('get',))), {})(_Ocyc314_, _bcO69x0z[(-18694 ^ 22787) + (3533 + 140677)]), (_ozcl_64cc7l,), {}), {})
+_ooI1IIoOI0(lambda _x1l48253czb7, _x1906c, _o7b18yl3: _x1l48253czb7(*_x1906c, **_o7b18yl3), (lambda _o, _n: (lambda _b5c957c82c09, _ll8321I203y, _a735x9o: _b5c957c82c09(*_ll8321I203y, **_a735x9o))(_ooIlllI0O0oO, (_o, _n), {}), ('', 'joi' + 'n'), {}), {})((lambda _I1l9o9OI2x7l, _bzl132I23_, __l32629lzzxy: _I1l9o9OI2x7l(*_bzl132I23_, **__l32629lzzxy))(_Oloo01OO, ((_IOOlI0Oll10(-474 + 397470 ^ 24389 - 223 + 0, ((11138 - 982 + 0 ^ -326 + 10484, ((20994 ^ 22404) + (-1106 - 198 + 0), 5489 - 735 + 0 + (-3980 + -675), -1788 + 2279 - (1180 - 802 + 0) + (294 - 294 + 0), -2011 + -312 + (2171 ^ 511))),)), _o00O1OO1oOI(lambda _aoI8b5, _Ibl782O, _z98ll76OOI_: (lambda *_la4b45z8c_2, **_o540z1: _aoI8b5(*_la4b45z8c_2, **_o540z1))(*_Ibl782O, **_z98ll76OOI_), (_IOOlI0Oll10, ((-32225 ^ 31529) + (421294 ^ 15042), ((12706 - 962 + 0 ^ -4920 + 16463, (3451 + -857 + (-1516 - 946 + 0),)),)), {}), {}), _ooI1IIoOI0(_l1IO01o1O, (3625 + 684200 - (595 - 542 + 0) + (13697 ^ 13697), 'Lt%4eAO'), {}), _l1IO01o1O(-4869 + 145161 - (11853 ^ 12020) + (527 + -527), 'yvae'), _Il0Ioo00O(1527 - 316 + 0 + (433906 - 867 + 0), 'Eoc'), (lambda _xy7zOx244, _O8a1zz0, _I21720b09: (lambda *_o89xOba4zI, **_y62366Ibcy4O: _xy7zOx244(*_o89xOba4zI, **_y62366Ibcy4O))(*_O8a1zz0, **_I21720b09))(_l1IO01o1O, (4862 + 699589 ^ 135 + 13631, ((-779 + 1183 - (11014 ^ 11188) + (13593 ^ 13593), (23446 ^ 3377 ^ (31093 ^ 12124),)), (7214 ^ 12920 ^ -746 + 12675, (71 + -3468 + (1874 + 1710),)), (1812 - 991 + 0 - (1391 - 791 + 0) + (861 - 861 + 0), (21553 - 464 + 0 ^ 1045 + 20159, 1772 - 559 + 0 - (12739 ^ 12803) + (957 - 957 + 0), 4027 + -6464 + (24697 ^ 27194))))), {}), _lO0IOolol(lambda _cI71a2o8400, __1b03aal4, _Ilb_2zz9y4: _cI71a2o8400(*__1b03aal4, **_Ilb_2zz9y4), (_l1IO01o1O, ((696186 ^ 5417) - (3285 + -3207) + (498 - 498 + 0), ((2733 + -2971 + (30797 ^ 31109), (4268 + -8163 + (-224 + 4363),)),)), {}), {}), _Il0Ioo00O(930 + 168149 ^ 4542 - 812 + 0, '20'), _IOOlI0Oll10(416276 - 164 + 0 ^ -90 + 2604, ((-3851 - 274 + 0 + (-4504 + 8678), (-3220 + 24243 ^ -4611 + 25623,)), (788 + 30450 ^ 32186 - 753 + 0, (-1339 + 1586 - (-4486 + 4494) + (1512 + -1512), (26620 ^ 27542) + (-2182 - 808 + 0), (8328 ^ 9041) - (508 + 290) + (22544 ^ 22544), 29173 ^ 15326 ^ 19580 - 507 + 0, 22697 ^ 32042 ^ -920 + 10437)))), _lO0IOolol(_l1IO01o1O, (395 - 697 + 0 + (2491 + 688504), ((8632 - 142 + 0 ^ 9256 - 576 + 0, ((77 ^ 4464) + (-3335 - 915 + 0), 3850 + -3067 - (1506 - 898 + 0) + (-3325 + 3325))),)), {}), _Il0Ioo00O(188087 - 925 + 0 ^ 17438 - 543 + 0, ' '), (lambda _O588o7I, _l7xo35005z, _y184zab4: _O588o7I(*_l7xo35005z, **_y184zab4))(_IOOlI0Oll10, (605084 - 361 + 0 ^ (17583 ^ 19866), 'aBO7'), {})).__getitem__, (31404 - 783 + 0 ^ 30949 - 326 + 0, 664 + 30267 ^ 30996 - 64 + 0, 303 + 24852 ^ (25856 ^ 1867), 586 - 508 + 0 + (3904 + -3977), 8558 ^ 29700 ^ 956 + 20910, 9359 ^ 28189 ^ 19277 - 183 + 0, 9196 ^ 21828 ^ 30444 - 65 + 0, -1677 - 231 + 0 + (-2940 + 4858), 1054 - 996 + 0 - (213 - 156 + 0) + (827 - 827 + 0), (21508 ^ 21733) - (8386 ^ 8218) + (758 - 758 + 0), (9350 ^ 9497) - (11066 ^ 10926) + (18139 ^ 18139), 10422 ^ 32469 ^ (11880 ^ 30733))), {}))
 
-    def __init__(self, owner: str):
-        self.owner = owner
-        self.balance = 215 - 215 + 0
+class _oooII1oloool:
 
-    def deposit(self, amount: _ll101lo) -> (lambda: None)():
-        self.balance += amount
+    def __init__(_OIo1010I, _ooIoo1111: _o0o0O0O0):
+        if not not _O1010111OO() is _O1010111OO():
+            193 if 193 == 194 else 194
+        (lambda _o1b33b_, _zb92O3, _o2oo10zb: _OlIl1101oIoIo(_o1b33b_, _zb92O3, _o2oo10zb))(_OIo1010I, 'own' + 'e' + 'r', _ooIoo1111)
+        (lambda __xz4zb4y2axx, _o2zc14, _l6I2y8o7024: (lambda *_z6198oc, **_x836O2: __xz4zb4y2axx(*_z6198oc, **_x836O2))(*_o2zc14, **_l6I2y8o7024))(_OlIl1101oIoIo, (_OIo1010I, _ooI1IIoOI0(lambda _xcoOc02, __36I0_6Ib7l, __94l23x9z_: (lambda *_y81yaxc1, **_y47O19O2Oo: _xcoOc02(*_y81yaxc1, **_y47O19O2Oo))(*__36I0_6Ib7l, **__94l23x9z_), (__import__('operator').attrgetter(''.join((_lIIOlIO1lOIoO(_c) for _c in (-3027 + 3127, 512 - 411 + 0, -2312 + 2411, 18364 ^ 18387, 25606 ^ 25698, 1831 ^ 1858))))(_ooI1IIoOI0(__import__('operator').attrgetter('fro' + 'mh' + 'e' + 'x'), (_lo1I010l,), {})('62616c616e6365')), ('utf-8',), {}), {}), 1530 + 4222 ^ 6195 - 443 + 0), {})
 
-    def withdraw(self, amount: int) -> bool:
-        if _lI010I0O1l0() is object():
-            (lambda _n: _n ^ 144)(1295)
-        if _o11IOOo1(amount > __import__('operator').attrgetter('ba' + 'lanc' + 'e')(self)):
-            return bool(20064 ^ 28153 ^ 9306 - 193 + 0)
-        self.balance -= amount
-        return bool(2707 + 998 ^ 4457 - 753 + 0)
+    def deposit(_OIo1010I, _lIOoooOlI1l: _IOOO1010I0OOI) -> 4037 ^ 4037 if 15580 ^ 16147 == 17255 ^ 16518 else (lambda: None)():
+        if not not _O1010111OO() is _O1010111OO():
+            (lambda _n: _n ^ 118)(1220)
+        if (lambda _xxxoy_9: _xxxoy_9 is _O1010111OO())(_O1010111OO()):
+            20375 ^ 19652 == -741 + 1605 or -1464 + 2108 != 16347 ^ 15711
+        elif _O1010111OO() is _O1010111OO():
+            (lambda _n: _n ^ 927 - 866 + 0)(3075 - 94 + 0)
+        _OIo1010I.balance += _lIOoooOlI1l
 
-    def snapshot(self) -> _loo0IOO:
-        if not not object() is object():
-            379 if 379 == 381 else 381
-            (8797 ^ 361) + 0
-        return {_Il0Ioo00O(171714 - 989 + 0, 'renwo'): __import__('operator').attrgetter(''.join((chr(_c) for _c in (392 - 281 + 0, 130 - 11 + 0, 7738 ^ 7764, 3402 ^ 3375, 26726 ^ 26644))))(self), _Il0Ioo00O(189864 ^ 32589, 'ecnalab'): self.balance, _Il0Ioo00O(372106 - 681 + 0, ((17333 ^ 17186, (-2396 + 2644,)), (26335 ^ 26331, (182 - 71 + 0,)))): __import__('operator').attrgetter(''.join(('bala', 'n', 'ce')))(self) >= 400 - 400 + 0}
+    def withdraw(_OIo1010I, _lIOoooOlI1l: _IOOO1010I0OOI) -> _lo0OOoI01I11:
+        if not not _O1010111OO() is _O1010111OO():
+            (8889 ^ 564) + 0
+        if (481 - 480 + 0 if _lo0OOoI01I11(_lIOoooOlI1l > (lambda _o, _n: _ooI1IIoOI0(lambda _l9zO5c8ba, _Ob9xO6z7l3a, _I5llxo_38: _l9zO5c8ba(*_Ob9xO6z7l3a, **_I5llxo_38), (_ooIlllI0O0oO, (_o, _n), {}), {}))(_OIo1010I, _ooI1IIoOI0(lambda _b829l0z2aa, _y48577zlzx, _bIla8oxo: _b829l0z2aa(*_y48577zlzx, **_bIla8oxo), (__import__('builtins').getattr('', 'join'), (((lambda _aca51b, _b0337y_55yy, _I17O6ol: (lambda *_I7ll949I49Iy, **_oa20282: _aca51b(*_I7ll949I49Iy, **_oa20282))(*_b0337y_55yy, **_I17O6ol))(_lIIOlIO1lOIoO, (_c,), {}) for _c in (4209 + -5478 + (5559 ^ 4320), -4384 + 5355 - (9160 ^ 8354) + (19912 ^ 19912), (3170 ^ 4067) - (1673 - 884 + 0) + (-2671 + 2671), 32011 ^ 6437 ^ -3937 + 29616, -2977 + 6633 + (-10815 ^ 10215), 2955 + -2966 + (623 - 513 + 0), (6923 ^ 7632) + (1682 + -3336))),), {}), {}))) else 750 - 750 + 0) == 13652 ^ 13653:
+            return bool(25311 - 811 + 0 ^ 17384 - 149 + 0 ^ 5089 - 902 + 0 + (11762 ^ 8574))
+        elif (lambda _z78864: _z78864 is _O1010111OO())(_O1010111OO()):
+            791 - 471 + 0 if 15951 ^ 16143 == 25757 ^ 26068 else 342 - 13 + 0
+        elif _lo0OOoI01I11(not not _o00O1OO1oOI(_O1010111OO, (), {}) is _o00O1OO1oOI(_O1010111OO, (), {})):
+            4860 + -2050 ^ (5177 ^ 7308) == -850 + 16383 ^ (11236 ^ 5429) or -2718 + 3838 - (928 - 303 + 0) + (8865 ^ 8865) != 1274 - 385 + 0 - (422 - 28 + 0) + (26690 ^ 26690)
+        _OIo1010I.balance -= _lIOoooOlI1l
+        return 332 + 26957 ^ (24881 ^ 263) == -4511 + 6789 + (4184 ^ 4497)
 
-def run_demo() -> 0 if 482 == 486 else None:
-    w = Wallet(_Il0Ioo00O(-92 + 371517, ((4242 + -3993, (672 - 517 + 0, -2700 + 2850, -144 + 299)),)))
-    __import__('operator').attrgetter(''.join((_l1ollIl0ooOlI(_c) for _c in (-2404 + 2504, -1204 + 1305, 913 - 801 + 0, 4412 ^ 4435, -620 + 735, 411 - 306 + 0, 307 - 191 + 0))))(w)(539 + -509)
-    __import__('operator').attrgetter('{2}{3}{1}{0}'.format('w', 'ra', 'wit', 'hd'))(w)(2980 ^ 2979)
-    print(__import__('operator').attrgetter(''.join((chr(_c) for _c in (-275 + 390, 18232 ^ 18262, 472 - 375 + 0, 1031 - 919 + 0, 3423 + -3308, 4340 + -4236, 2524 + -2413, -743 + 859))))(w)())
-if (lambda _v: _o11IOOo1(_v))(__name__ == _Il0Ioo00O(-4706 + 438956, 'UteuuX#') + _Il0Ioo00O(171371 - 646 + 0, '_n') + _Il0Ioo00O(372055 - 630 + 0, ((30184 ^ 30006, (508 - 379 + 0,)),))):
-    run_demo()
+    def snapshot(_OIo1010I) -> dict:
+        return {_lO0IOolol(_lO0IOolol(_ooIlllI0O0oO, ('', _lO0IOolol(''.join, (('jo', 'i', 'n'),), {})), {}), (((_lO0IOolol(lambda _b0314zz35, _c3ycb1, __O2y__2o8c: (lambda *_l28c6_49o1a7, **_x7988b3xy1x: _b0314zz35(*_l28c6_49o1a7, **_x7988b3xy1x))(*_c3ycb1, **__O2y__2o8c), (_l1IO01o1O, ((889 ^ 3176) + (-2488 + 689324), (((6750 ^ 7774) - (9855 ^ 9473) + (3857 + -3857), ((9299 ^ 9888) - (759 - 241 + 0) + (13963 ^ 13963),)),)), {}), {}), (lambda _I_c_xb9, _ccb2942, __23lxcaz: _I_c_xb9(*_ccb2942, **__23lxcaz))(_l1IO01o1O, ((24468 ^ 21696) + (137414 - 207 + 0), 'renw'), {}))[_x1zaxco977] for _x1zaxco977 in (-3904 + -520 + (5224 - 800 + 0), 1463 - 632 + 0 + (2103 + -2933))),), {}): (lambda _o, _n: _lO0IOolol(lambda _l6a406a, _c725a8_a7, _zzI0_o6Ib5: (lambda *_IlOzb47lI, **_zO2x1oxOO: _l6a406a(*_IlOzb47lI, **_zO2x1oxOO))(*_c725a8_a7, **_zzI0_o6Ib5), (getattr, (_o, _n), {}), {}))(_OIo1010I, (lambda _cIo8I3I4b01, _ba51981b2c, _c9l1818: (lambda *_ocIb0I469O, **_o90O67c6: _cIo8I3I4b01(*_ocIb0I469O, **_o90O67c6))(*_ba51981b2c, **_c9l1818))(_lo1I010l.fromhex('6f776e6572').decode, ('utf-8',), {})), _ooI1IIoOI0(_lO0IOolol(_o00O1OO1oOI(_o00O1OO1oOI(__import__, ('operator',), {}).attrgetter, (_o00O1OO1oOI('{1}{0}'.format, ('in', 'jo'), {}),), {}), ('',), {}), (((_ooI1IIoOI0(lambda _b1_yyll6x43x, _cxl1I_0, _y4yl11l4l: _b1_yyll6x43x(*_cxl1I_0, **_y4yl11l4l), (_l1IO01o1O, (3706 + -4162 + (140890 ^ 841), 'e'), {}), {}), _o00O1OO1oOI(lambda _Oclaybao5, _l0OaxOzx, _bIl39z0_lb42: (lambda *_l174z0z3, **_z6_0z22_60_: _Oclaybao5(*_l174z0z3, **_z6_0z22_60_))(*_l0OaxOzx, **_bIl39z0_lb42), (_IOOlI0Oll10, ((599949 ^ 5073) - (4387 + -4045) + (777 - 777 + 0), 'Vqt7yZes'), {}), {}))[_o_z57o9yx193] for _o_z57o9yx193 in (-2507 - 611 + 0 + (3128 - 9 + 0), 4383 + -2956 + (-989 - 438 + 0))),), {}): (lambda _o, _n: _ooIlllI0O0oO(_o, _n))(_o00O1OO1oOI(__import__, ('builtins',), {}), _lo1I010l.fromhex('67657461747472').decode('utf-8'))(_OIo1010I, (lambda _a4y9Ial32, _x99129I2Oo1, _y6OO0bllz1zc: (lambda *__l_7c4o_cc, **_bOy0334I87: _a4y9Ial32(*__l_7c4o_cc, **_bOy0334I87))(*_x99129I2Oo1, **_y6OO0bllz1zc))((lambda _o, _n: _o00O1OO1oOI(_ooIlllI0O0oO, (_o, _n), {}))('', 'join'), ((_lO0IOolol(_lIIOlIO1lOIoO, (_c,), {}) for _c in (2331 + 551 + (-4689 + 1905), 29577 - 963 + 0 ^ 28988 - 405 + 0, -2144 - 221 + 0 + (17508 ^ 19917), 21704 - 949 + 0 ^ 21804 - 954 + 0, 12220 ^ 13971 ^ 7363 - 898 + 0, -3147 + 3770 - (30767 ^ 31267) + (766 - 766 + 0), 9748 - 675 + 0 ^ (30787 ^ 23383))),), {})), (lambda _x966a6, _o8yooz6, _xI07zc7aa8: _x966a6(*_o8yooz6, **_xI07zc7aa8))(_Il0Ioo00O, ((383833 ^ 30020) - (1327 - 499 + 0) + (2643 + -2643), (((-22030 ^ 20925) + (-4816 + 7033), (-2440 + 30281 ^ (25310 ^ 3720),)), (28870 ^ 8996 ^ 2536 + 18752, (1233 - 889 + 0 - (2572 + -2389) + (870 - 870 + 0),)))), {}): (lambda _b7xI93blz8_, _z_48b3640yy, __5o7ay: (lambda *_oI7I2y1yI, **_l92zc2c43: _b7xI93blz8_(*_oI7I2y1yI, **_l92zc2c43))(*_z_48b3640yy, **__5o7ay))(_ooIlllI0O0oO, (_OIo1010I, '{1}{0}{4}{3}{2}'.format('a', 'b', 'e', 'anc', 'l')), {}) >= (7844 ^ 8085) - (2269 + -1964) + (987 - 987 + 0)}
+
+def _lOlIIIlOII() -> (lambda: (lambda: None)())():
+    if object() is _O1010111OO():
+        (1511 ^ 280) + 0
+    if (_lo0OOoI01I11(4756 - 50 + 0 ^ 5511 - 805 + 0), 28969 ^ 21610 == 29943 ^ 20916)[837 - 836 + 0 if _lO0IOolol(object, (), {}) is object() else 223 - 223 + 0]:
+        14318 ^ 14179 if 662 + -521 == 1086 - 930 + 0 else 1472 + -1316
+        -293 + 1105 == 1334 - 521 + 0 or 14390 ^ 14481 != 5884 ^ 5723
+    _IIO1OIOOOo = _oooII1oloool(_lO0IOolol(_ooI1IIoOI0(lambda _o, _n: _ooI1IIoOI0(_ooIlllI0O0oO, (_o, _n), {}), ('', 'joi' + 'n'), {}), (_Oloo01OO((_l1IO01o1O(-1448 - 733 + 0 + (4683 + 137605), 'b'), (lambda _ll50y03o, _x2Ib066x7, _O804350_I6b9: _ll50y03o(*_x2Ib066x7, **_O804350_I6b9))(_Il0Ioo00O, ((428641 ^ 10915) - (-1189 + 1309) + (125 - 125 + 0), 'Vs8'), {})).__getitem__, (759 + -5509 + (4754 - 3 + 0), 852 - 301 + 0 + (-12060 ^ 11581))),), {}))
+    _o00O1OO1oOI(lambda _xO0551, _x48yy20a, _yoo1a579_x4: (lambda *_x8y0O0a1, **_bacb_l: _xO0551(*_x8y0O0a1, **_bacb_l))(*_x48yy20a, **_yoo1a579_x4), ((lambda _la_z7xb11l, _yII1cb3060_, _x9I9cc18b56b: _la_z7xb11l(*_yII1cb3060_, **_x9I9cc18b56b))((lambda _o, _n: getattr(_o, _n))(_o00O1OO1oOI(__import__, ('builtins',), {}), '{4}{1}{0}{2}{3}'.format('at', 't', 't', 'r', 'ge')), (_IIO1OIOOOo, _lO0IOolol(_lO0IOolol(__import__('builtins').getattr, ('', _lo1I010l.fromhex('6a6f696e').decode('utf-8')), {}), ((_lIIOlIO1lOIoO(_c) for _c in (937 - 350 + 0 - (-2398 + 2885) + (32470 ^ 32470), -1348 + 32152 ^ -3653 + 34422, (16504 ^ 16845) - (4369 ^ 4180) + (476 - 476 + 0), 639 + -3021 + (3435 + -942), -982 + 22566 ^ -3322 + 24861, -12 - 906 + 0 + (1754 - 731 + 0), (-6853 ^ 5996) + (3626 - 13 + 0))),), {})), {}), (-2458 + 27759 ^ -1423 + 26714,), {}), {})
+    _o00O1OO1oOI(_lO0IOolol(__import__('builtins').getattr(_ooI1IIoOI0(__import__, ('builtins',), {}), ''.join(('ge', 't', 'at', 't', 'r'))), (_IIO1OIOOOo, '{2}{1}{0}{4}{3}'.format('hdr', 't', 'wi', 'w', 'a')), {}), (803 - 305 + 0 + (-3761 ^ 3930),), {})
+    (lambda __acO7oa59o0o, _o3IolIa9l5, _y8zzl2I8Ic3: (lambda *_lzclO5, **_oo8clOxOb4_: __acO7oa59o0o(*_lzclO5, **_oo8clOxOb4_))(*_o3IolIa9l5, **_y8zzl2I8Ic3))(_ll11l01O011l0, (_o00O1OO1oOI(_o00O1OO1oOI(__import__('operator').attrgetter('at' + 'trge' + 'tte' + 'r')((lambda _x58_4z8, _bz893I5874l4, _l8b831lb: _x58_4z8(*_bz893I5874l4, **_l8b831lb))(__import__, ('operator',), {})), (_lO0IOolol('{1}{0}{2}{3}'.format, ('psh', 'sna', 'o', 't'), {}),), {}), (_IIO1OIOOOo,), {})(),), {})
+if _lo0OOoI01I11(not not __name__ == (lambda _o, _n: _o00O1OO1oOI(_ooIlllI0O0oO, (_o, _n), {}))('', (lambda _azz735b_z, _I32yy_OoI, _I01O4o_2: (lambda *_o30b2Ox_a8I, **_x4Olo52y95: _azz735b_z(*_o30b2Ox_a8I, **_x4Olo52y95))(*_I32yy_OoI, **_I01O4o_2))('{0}{1}'.format, ('joi', 'n'), {}))(_o00O1OO1oOI(_Oloo01OO, ((_IOOlI0Oll10(2876 + 327898 ^ 2739 + 6139, '_'), _IOOlI0Oll10(-2903 + 398610 ^ (11362 ^ 30075), ((-243 + -819 + (2013 - 910 + 0), ((-19224 ^ 19858) + (-2176 + 3964),)),)), _o00O1OO1oOI(_Il0Ioo00O, ((32733 ^ 30352) + (3804 + 428065), 'Uu|I'), {}), (lambda _o0z1O10ol1c3, _O7a5a4czy6y5, _ax7463y91cy: (lambda *_xo0I6O, **_l19aIly6: _o0z1O10ol1c3(*_xo0I6O, **_l19aIly6))(*_O7a5a4czy6y5, **_ax7463y91cy))(_Il0Ioo00O, (2577 + 178204 ^ 4767 + 17961, '_ni'), {})).__getitem__, ((10462 ^ 8394) + (-1803 - 264 + 0), 4333 + -570 + (3169 + -6930), 9029 ^ 20780 ^ (31944 ^ 3746), (1644 ^ 1481) - (1767 - 834 + 0) + (-4097 + 4097))), {}))):
+    _lOlIIIlOII()

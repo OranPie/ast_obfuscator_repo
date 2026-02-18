@@ -11,6 +11,7 @@ Features
 - Type methods (`--string-mode`, `--int-mode`, `--float-mode`, `--bytes-mode`, `--none-mode`)
 - Transformation order and density (`--order`, `--import-rate`, `--condition-rate`,
   `--branch-rate`, `--loop-rate`, `--attr-rate`, `--flow-rate`, `--flow-count`)
+- Helper multiplicity (`--string-helpers`, `--call-helpers`)
 - Multiple transformation passes (`--passes`)
 - Junk function injection (`--junk`, `--junk-position`)
 - Deterministic builds (`--seed`)
@@ -184,6 +185,8 @@ class ObfuscationConfig:
     flow_count: int
     string_chunk_min: int
     string_chunk_max: int
+    string_helpers: int
+    call_helpers: int
     transform_order: tuple[str, ...]
     keep_docstrings: bool
     preserve_names: set[str]
@@ -435,22 +438,25 @@ class Renamer(ast.NodeTransformer):
 class StringObfuscator(ast.NodeTransformer):
     def __init__(
         self,
-        helper_name: str,
+        helper_specs: list[tuple[str, dict[str, int]]],
         rng: random.Random,
         keep_docstrings: bool,
         chunk_min: int,
         chunk_max: int,
         mode: str,
-        mode_tags: dict[str, int],
     ) -> None:
-        self.helper_name = helper_name
+        self.helper_specs = helper_specs
         self.rng = rng
         self.keep_docstrings = keep_docstrings
         self.chunk_min = max(1, chunk_min)
         self.chunk_max = max(self.chunk_min, chunk_max)
         self.mode = mode
-        self.mode_tags = mode_tags
         self.changed = 0
+
+    def _pick_helper(self) -> tuple[str, dict[str, int]]:
+        if self.helper_specs:
+            return self.rng.choice(self.helper_specs)
+        return ("_obf_str", {"xor": 0, "b85": 1, "reverse": 2})
 
     def _encode_chunks(self, value: str) -> list[tuple[int, list[int]]]:
         chunks: list[tuple[int, list[int]]] = []
@@ -465,7 +471,7 @@ class StringObfuscator(ast.NodeTransformer):
             idx += step
         return chunks
 
-    def _xor_expr(self, value: str) -> ast.AST:
+    def _xor_expr(self, value: str, helper_name: str, mode_tags: dict[str, int]) -> ast.AST:
         chunks = self._encode_chunks(value)
         encoded_nodes: list[ast.expr] = []
         for key, values in chunks:
@@ -479,32 +485,33 @@ class StringObfuscator(ast.NodeTransformer):
                 )
             )
         return ast.Call(
-            func=ast.Name(id=self.helper_name, ctx=ast.Load()),
-            args=[ast.Constant(self.mode_tags["xor"]), ast.Tuple(elts=encoded_nodes, ctx=ast.Load())],
+            func=ast.Name(id=helper_name, ctx=ast.Load()),
+            args=[ast.Constant(mode_tags["xor"]), ast.Tuple(elts=encoded_nodes, ctx=ast.Load())],
             keywords=[],
         )
 
-    def _b85_expr(self, value: str) -> ast.AST:
+    def _b85_expr(self, value: str, helper_name: str, mode_tags: dict[str, int]) -> ast.AST:
         payload = base64.b85encode(value.encode("utf-8")).decode("ascii")
         return ast.Call(
-            func=ast.Name(id=self.helper_name, ctx=ast.Load()),
-            args=[ast.Constant(self.mode_tags["b85"]), ast.Constant(payload)],
+            func=ast.Name(id=helper_name, ctx=ast.Load()),
+            args=[ast.Constant(mode_tags["b85"]), ast.Constant(payload)],
             keywords=[],
         )
 
-    def _reverse_expr(self, value: str) -> ast.AST:
+    def _reverse_expr(self, value: str, helper_name: str, mode_tags: dict[str, int]) -> ast.AST:
         return ast.Call(
-            func=ast.Name(id=self.helper_name, ctx=ast.Load()),
-            args=[ast.Constant(self.mode_tags["reverse"]), ast.Constant(value[::-1])],
+            func=ast.Name(id=helper_name, ctx=ast.Load()),
+            args=[ast.Constant(mode_tags["reverse"]), ast.Constant(value[::-1])],
             keywords=[],
         )
 
     def _leaf_expr(self, value: str, mode: str) -> ast.AST:
+        helper_name, mode_tags = self._pick_helper()
         if mode == "b85":
-            return self._b85_expr(value)
+            return self._b85_expr(value, helper_name, mode_tags)
         if mode == "reverse":
-            return self._reverse_expr(value)
-        return self._xor_expr(value)
+            return self._reverse_expr(value, helper_name, mode_tags)
+        return self._xor_expr(value, helper_name, mode_tags)
 
     def _split_expr(self, value: str) -> ast.AST:
         if len(value) <= 1:
@@ -527,10 +534,45 @@ class StringObfuscator(ast.NodeTransformer):
             leaf_mode = self.rng.choice(("xor", "b85", "reverse"))
             exprs.append(self._leaf_expr(part, leaf_mode))
 
-        out = exprs[0]
-        for nxt in exprs[1:]:
-            out = ast.BinOp(left=out, op=ast.Add(), right=nxt)
-        return out
+        order = list(range(len(exprs)))
+        self.rng.shuffle(order)
+        shuffled_exprs = [exprs[idx] for idx in order]
+        restore_order = [order.index(idx) for idx in range(len(order))]
+
+        lookup_style = self.rng.choice(("map", "gen"))
+        pieces_value = ast.Tuple(elts=shuffled_exprs, ctx=ast.Load())
+        order_expr = ast.Tuple(elts=[ast.Constant(idx) for idx in restore_order], ctx=ast.Load())
+        if lookup_style == "map":
+            values_expr: ast.expr = ast.Call(
+                func=ast.Name(id="map", ctx=ast.Load()),
+                args=[
+                    ast.Attribute(value=pieces_value, attr="__getitem__", ctx=ast.Load()),
+                    order_expr,
+                ],
+                keywords=[],
+            )
+        else:
+            index_name = random_local_identifier(self.rng)
+            values_expr = ast.GeneratorExp(
+                elt=ast.Subscript(
+                    value=pieces_value,
+                    slice=ast.Name(id=index_name, ctx=ast.Load()),
+                    ctx=ast.Load(),
+                ),
+                generators=[
+                    ast.comprehension(
+                        target=ast.Name(id=index_name, ctx=ast.Store()),
+                        iter=order_expr,
+                        ifs=[],
+                        is_async=0,
+                    )
+                ],
+            )
+        return ast.Call(
+            func=ast.Attribute(value=ast.Constant(""), attr="join", ctx=ast.Load()),
+            args=[values_expr],
+            keywords=[],
+        )
 
     def _obf_expr(self, value: str) -> ast.AST:
         mode = self.mode
@@ -1490,17 +1532,18 @@ class CallObfuscator(ast.NodeTransformer):
     def __init__(
         self,
         rng: random.Random,
-        helper_name: str,
+        helper_names: tuple[str, ...],
         mode: str,
         rate: float,
         methods: tuple[str, ...],
     ) -> None:
         self.rng = rng
-        self.helper_name = helper_name
+        self.helper_names = helper_names
         self.mode = mode
         self.rate = max(0.0, min(1.0, rate))
         self.methods = methods
         self.changed = 0
+        self.used_helpers: set[str] = set()
 
     def _triple_names(self) -> tuple[str, str, str]:
         names: list[str] = []
@@ -1605,11 +1648,16 @@ class CallObfuscator(ast.NodeTransformer):
             return self.rng.choice(self.methods)
         return "helper_wrap"
 
+    def _pick_helper_name(self) -> str:
+        if self.helper_names:
+            return self.rng.choice(self.helper_names)
+        return "_obf_call"
+
     def visit_Call(self, node: ast.Call) -> ast.AST:
         self.generic_visit(node)
         if self.rng.random() > self.rate:
             return node
-        if isinstance(node.func, ast.Name) and node.func.id == self.helper_name:
+        if isinstance(node.func, ast.Name) and node.func.id in self.helper_names:
             return node
         if any(isinstance(arg, ast.Starred) for arg in node.args):
             return node
@@ -1624,8 +1672,10 @@ class CallObfuscator(ast.NodeTransformer):
         elif method == "factory_lambda_call":
             replaced = self._factory_lambda_wrap(node.func, node.args, node.keywords)
         else:
+            helper_name = self._pick_helper_name()
+            self.used_helpers.add(helper_name)
             replaced = ast.Call(
-                func=ast.Name(id=self.helper_name, ctx=ast.Load()),
+                func=ast.Name(id=helper_name, ctx=ast.Load()),
                 args=[
                     node.func,
                     ast.Tuple(elts=node.args, ctx=ast.Load()),
@@ -2140,6 +2190,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--flow-count", type=int, default=1, help="Max dead blocks per function per pass")
     parser.add_argument("--string-chunk-min", type=int, default=1, help="Minimum string chunk size")
     parser.add_argument("--string-chunk-max", type=int, default=6, help="Maximum string chunk size")
+    parser.add_argument("--string-helpers", type=int, default=1, help="Number of string decode helpers to emit")
+    parser.add_argument("--call-helpers", type=int, default=1, help="Number of call wrapper helpers to emit")
     parser.add_argument(
         "--order",
         default="imports,attrs,setattrs,calls,conds,loops,bools,ints,floats,bytes,none,flow",
@@ -2364,6 +2416,8 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "branch_rate": 0.45,
             "loop_rate": 0.65,
             "flow_count": 1,
+            "string_helpers": 2,
+            "call_helpers": 2,
         },
         "stealth": {
             "rename": True,
@@ -2395,6 +2449,8 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "branch_rate": 0.2,
             "loop_rate": 0.25,
             "flow_count": 1,
+            "string_helpers": 2,
+            "call_helpers": 2,
         },
         "max": {
             "rename": True,
@@ -2426,6 +2482,8 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "branch_rate": 0.8,
             "loop_rate": 1.0,
             "flow_count": 2,
+            "string_helpers": 4,
+            "call_helpers": 4,
         },
     }
     return profiles[profile]
@@ -2603,6 +2661,8 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
     flow_rate = float(prof.get("flow_rate", args.flow_rate))
     flow_count_default = int(prof.get("flow_count", args.flow_count))
     flow_count = flow_count_default
+    string_helpers = int(prof.get("string_helpers", args.string_helpers))
+    call_helpers = int(prof.get("call_helpers", args.call_helpers))
 
     # Explicit numeric CLI flags override profile defaults.
     if "--import-rate" in sys.argv:
@@ -2625,6 +2685,10 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         flow_rate = args.flow_rate
     if "--flow-count" in sys.argv:
         flow_count = args.flow_count
+    if "--string-helpers" in sys.argv:
+        string_helpers = args.string_helpers
+    if "--call-helpers" in sys.argv:
+        call_helpers = args.call_helpers
     if "--dynamic-level" in sys.argv:
         dynamic_level = args.dynamic_level
 
@@ -2648,6 +2712,10 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         raise ValueError("--builtin-rate must be between 0.0 and 1.0")
     if flow_count <= 0:
         raise ValueError("--flow-count must be >= 1")
+    if string_helpers <= 0:
+        raise ValueError("--string-helpers must be >= 1")
+    if call_helpers <= 0:
+        raise ValueError("--call-helpers must be >= 1")
     if args.string_chunk_min <= 0 or args.string_chunk_max <= 0:
         raise ValueError("--string chunk sizes must be >= 1")
     if args.string_chunk_min > args.string_chunk_max:
@@ -2723,6 +2791,8 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         flow_count=flow_count,
         string_chunk_min=args.string_chunk_min,
         string_chunk_max=args.string_chunk_max,
+        string_helpers=string_helpers,
+        call_helpers=call_helpers,
         transform_order=transform_order,
         keep_docstrings=args.keep_docstrings,
         preserve_names=preserve_names,
@@ -2802,15 +2872,33 @@ def build_string_helper(
 ) -> ast.FunctionDef:
     mode_arg = random_local_identifier(rng)
     payload_arg = random_local_identifier(rng)
-    helper_source = (
-        f"def {name}({mode_arg}, {payload_arg}):\n"
-        f"    if {mode_arg} == {mode_tags['xor']}:\n"
-        "        return \"\".join(\"\".join(chr(c ^ key) for c in data) for key, data in payload)\n"
-        f"    if {mode_arg} == {mode_tags['b85']}:\n"
-        "        import base64\n"
-        f"        return base64.b85decode({payload_arg}.encode(\"ascii\")).decode(\"utf-8\")\n"
-        f"    return {payload_arg}[::-1]\n"
-    )
+    variant = rng.choice(("if_chain", "dispatch"))
+    if variant == "dispatch":
+        mode_copy = random_local_identifier(rng)
+        payload_copy = random_local_identifier(rng)
+        table_name = random_local_identifier(rng)
+        helper_source = (
+            f"def {name}({mode_arg}, {payload_arg}):\n"
+            "    import base64\n"
+            f"    {mode_copy} = {mode_arg}\n"
+            f"    {payload_copy} = {payload_arg}\n"
+            f"    {table_name} = {{\n"
+            f"        {mode_tags['xor']}: lambda _p: \"\".join(\"\".join(chr(c ^ key) for c in data) for key, data in _p),\n"
+            f"        {mode_tags['b85']}: lambda _p: base64.b85decode(_p.encode(\"ascii\")).decode(\"utf-8\"),\n"
+            f"        {mode_tags['reverse']}: lambda _p: _p[::-1],\n"
+            "    }\n"
+            f"    return {table_name}.get({mode_copy}, {table_name}[{mode_tags['reverse']}])({payload_copy})\n"
+        )
+    else:
+        helper_source = (
+            f"def {name}({mode_arg}, {payload_arg}):\n"
+            f"    if {mode_arg} == {mode_tags['xor']}:\n"
+            "        return \"\".join(\"\".join(chr(c ^ key) for c in data) for key, data in payload)\n"
+            f"    if {mode_arg} == {mode_tags['b85']}:\n"
+            "        import base64\n"
+            f"        return base64.b85decode({payload_arg}.encode(\"ascii\")).decode(\"utf-8\")\n"
+            f"    return {payload_arg}[::-1]\n"
+        )
     module = ast.parse(helper_source)
     fn = module.body[0]
     assert isinstance(fn, ast.FunctionDef)
@@ -2830,30 +2918,49 @@ def build_call_helper(name: str, rng: random.Random) -> ast.FunctionDef:
     fn_arg = random_local_identifier(rng)
     args_arg = random_local_identifier(rng)
     kwargs_arg = random_local_identifier(rng)
-    helper_source = (
-        f"def {name}({fn_arg}, {args_arg}, {kwargs_arg}):\n"
-        f"    return {fn_arg}(*{args_arg}, **{kwargs_arg})\n"
-    )
+    variant = rng.choice(("direct", "lambda", "staged"))
+    if variant == "lambda":
+        helper_source = (
+            f"def {name}({fn_arg}, {args_arg}, {kwargs_arg}):\n"
+            f"    return (lambda _f, _a, _k: _f(*_a, **_k))({fn_arg}, {args_arg}, {kwargs_arg})\n"
+        )
+    elif variant == "staged":
+        copy_fn = random_local_identifier(rng)
+        copy_args = random_local_identifier(rng)
+        copy_kwargs = random_local_identifier(rng)
+        helper_source = (
+            f"def {name}({fn_arg}, {args_arg}, {kwargs_arg}):\n"
+            f"    {copy_fn} = {fn_arg}\n"
+            f"    {copy_args} = {args_arg}\n"
+            f"    {copy_kwargs} = {kwargs_arg}\n"
+            f"    return {copy_fn}(*{copy_args}, **{copy_kwargs})\n"
+        )
+    else:
+        helper_source = (
+            f"def {name}({fn_arg}, {args_arg}, {kwargs_arg}):\n"
+            f"    return {fn_arg}(*{args_arg}, **{kwargs_arg})\n"
+        )
     module = ast.parse(helper_source)
     fn = module.body[0]
     assert isinstance(fn, ast.FunctionDef)
     return fn
 
 
-def build_builtin_alias(alias_name: str, builtin_name: str, mode: str) -> ast.Assign:
+def build_builtin_alias(alias_name: str, builtin_name: str, mode: str, rng: random.Random) -> ast.Assign:
+    builtin_name_expr = build_text_expr(builtin_name, rng)
+    builtins_module_expr = ast.Call(
+        func=ast.Name(id="__import__", ctx=ast.Load()),
+        args=[build_text_expr("builtins", rng)],
+        keywords=[],
+    )
+    builtins_getattr_expr = ast.Call(
+        func=ast.Name(id="getattr", ctx=ast.Load()),
+        args=[builtins_module_expr, builtin_name_expr],
+        keywords=[],
+    )
+
     if mode == "builtins_getattr_alias":
-        value: ast.expr = ast.Call(
-            func=ast.Name(id="getattr", ctx=ast.Load()),
-            args=[
-                ast.Call(
-                    func=ast.Name(id="__import__", ctx=ast.Load()),
-                    args=[ast.Constant("builtins")],
-                    keywords=[],
-                ),
-                ast.Constant(builtin_name),
-            ],
-            keywords=[],
-        )
+        value: ast.expr = builtins_getattr_expr
     elif mode == "globals_lookup":
         value = ast.Call(
             func=ast.Attribute(
@@ -2861,11 +2968,44 @@ def build_builtin_alias(alias_name: str, builtin_name: str, mode: str) -> ast.As
                 attr="get",
                 ctx=ast.Load(),
             ),
-            args=[ast.Constant(builtin_name), ast.Name(id=builtin_name, ctx=ast.Load())],
+            args=[build_text_expr(builtin_name, rng), builtins_getattr_expr],
             keywords=[],
         )
     else:
-        value = ast.Name(id=builtin_name, ctx=ast.Load())
+        alias_style = rng.choice(("getattr", "dict_get", "lambda_getattr"))
+        if alias_style == "dict_get":
+            value = ast.Call(
+                func=ast.Attribute(
+                    value=ast.Attribute(value=builtins_module_expr, attr="__dict__", ctx=ast.Load()),
+                    attr="get",
+                    ctx=ast.Load(),
+                ),
+                args=[build_text_expr(builtin_name, rng), builtins_getattr_expr],
+                keywords=[],
+            )
+        elif alias_style == "lambda_getattr":
+            obj_name = random_local_identifier(rng)
+            name_name = random_local_identifier(rng)
+            value = ast.Call(
+                func=ast.Lambda(
+                    args=ast.arguments(
+                        posonlyargs=[],
+                        args=[ast.arg(arg=obj_name), ast.arg(arg=name_name)],
+                        kwonlyargs=[],
+                        kw_defaults=[],
+                        defaults=[],
+                    ),
+                    body=ast.Call(
+                        func=ast.Name(id="getattr", ctx=ast.Load()),
+                        args=[ast.Name(id=obj_name, ctx=ast.Load()), ast.Name(id=name_name, ctx=ast.Load())],
+                        keywords=[],
+                    ),
+                ),
+                args=[builtins_module_expr, build_text_expr(builtin_name, rng)],
+                keywords=[],
+            )
+        else:
+            value = builtins_getattr_expr
     return ast.Assign(targets=[ast.Name(id=alias_name, ctx=ast.Store())], value=value)
 
 
@@ -3205,40 +3345,50 @@ def obfuscate_source(
         stats.renamed = len(rename_map)
 
     if config.strings:
-        helper_name = NameGenerator(collect_identifiers(tree), rng).next_name()
-        mode_tags: dict[str, int] = {}
-        used_tags: set[int] = set()
-        for key in ("xor", "b85", "reverse"):
-            token = rng.randint(5000, 900000)
-            while token in used_tags:
+        helper_name_gen = NameGenerator(collect_identifiers(tree), rng)
+        helper_specs: list[tuple[str, dict[str, int]]] = []
+        for _ in range(max(1, config.string_helpers)):
+            helper_name = helper_name_gen.next_name()
+            mode_tags: dict[str, int] = {}
+            used_tags: set[int] = set()
+            for key in ("xor", "b85", "reverse"):
                 token = rng.randint(5000, 900000)
-            used_tags.add(token)
-            mode_tags[key] = token
+                while token in used_tags:
+                    token = rng.randint(5000, 900000)
+                used_tags.add(token)
+                mode_tags[key] = token
+            helper_specs.append((helper_name, mode_tags))
         string_obf = StringObfuscator(
-            helper_name,
+            helper_specs,
             rng,
             config.keep_docstrings,
             config.string_chunk_min,
             config.string_chunk_max,
             config.string_mode,
-            mode_tags,
         )
         tree = string_obf.visit(tree)
         stats.strings += string_obf.changed
         if string_obf.changed > 0 and isinstance(tree, ast.Module):
-            insert_after_docstring(tree, build_string_helper(helper_name, mode_tags, rng))
+            insertion_specs = list(helper_specs)
+            rng.shuffle(insertion_specs)
+            for helper_name, mode_tags in insertion_specs:
+                insert_after_docstring(tree, build_string_helper(helper_name, mode_tags, rng))
             string_helpers = helper_hints["string_helpers"]
             assert isinstance(string_helpers, list)
-            string_helpers.append({"name": helper_name, "modes": mode_tags})
+            for helper_name, mode_tags in helper_specs:
+                string_helpers.append({"name": helper_name, "modes": mode_tags})
 
-    call_helper_name = NameGenerator(collect_identifiers(tree), rng).next_name()
+    call_helper_names: tuple[str, ...] = ()
+    if config.calls:
+        call_helper_gen = NameGenerator(collect_identifiers(tree), rng)
+        call_helper_names = tuple(call_helper_gen.next_name() for _ in range(max(1, config.call_helpers)))
     if config.calls and (
         (config.call_mode in {"mixed", "wrap"} and "helper_wrap" in config.dynamic_methods["call"])
         or config.call_mode == "wrap"
     ):
         call_helpers = helper_hints["call_helpers"]
         assert isinstance(call_helpers, list)
-        call_helpers.append(call_helper_name)
+        call_helpers.extend(call_helper_names)
 
     for _ in range(config.passes):
         for transform in config.transform_order:
@@ -3275,7 +3425,7 @@ def obfuscate_source(
             elif transform == "calls" and config.calls:
                 call_obf = CallObfuscator(
                     rng,
-                    call_helper_name,
+                    call_helper_names,
                     config.call_mode,
                     config.call_rate,
                     config.dynamic_methods["call"],
@@ -3340,7 +3490,10 @@ def obfuscate_source(
         and stats.calls > 0
         and isinstance(tree, ast.Module)
     ):
-        insert_after_docstring(tree, build_call_helper(call_helper_name, rng))
+        insertion_names = list(call_helper_names)
+        rng.shuffle(insertion_names)
+        for helper_name in insertion_names:
+            insert_after_docstring(tree, build_call_helper(helper_name, rng))
 
     if config.builtins:
         builtin_targets = collect_builtin_loads(tree, config.preserve_names)
@@ -3355,7 +3508,7 @@ def obfuscate_source(
                     chosen = rng.choice(config.dynamic_methods["builtin"])
                     insert_after_docstring(
                         tree,
-                        build_builtin_alias(builtin_map[name], name, chosen),
+                        build_builtin_alias(builtin_map[name], name, chosen, rng),
                     )
             stats.builtins = builtin_transform.changed
 
@@ -3427,7 +3580,9 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
             "mode": config.string_mode,
             "chunk_min": config.string_chunk_min,
             "chunk_max": config.string_chunk_max,
+            "helpers": config.string_helpers,
         },
+        "call_helpers": config.call_helpers,
         "meta_minimal": config.meta_minimal,
         "meta_omit_rename_map": config.meta_omit_rename_map,
         "meta_omit_helper_hints": config.meta_omit_helper_hints,
@@ -3974,7 +4129,8 @@ def explain_config(config: ObfuscationConfig) -> None:
         f"builtin_rate={config.builtin_rate:.2f}, flow_rate={config.flow_rate:.2f}, "
         f"cond_rate={config.condition_rate:.2f}, branch_rate={config.branch_rate:.2f}, "
         f"loop_rate={config.loop_rate:.2f}, flow_count={config.flow_count}, "
-        f"str_chunks={config.string_chunk_min}-{config.string_chunk_max}"
+        f"str_chunks={config.string_chunk_min}-{config.string_chunk_max}, "
+        f"str_helpers={config.string_helpers}, call_helpers={config.call_helpers}"
     )
     print(
         "Dynamic methods: "

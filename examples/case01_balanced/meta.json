@@ -1,23 +1,25 @@
 {
   "config": {
     "attr_mode": "mixed",
-    "attr_rate": 0.75,
+    "attr_rate": 0.95,
     "bool_mode": "mixed",
-    "branch_rate": 0.45,
+    "branch_rate": 0.85,
     "builtin_mode": "mixed",
     "bytes_mode": "mixed",
+    "call_helpers": 4,
     "call_mode": "mixed",
     "condition_mode": "mixed",
-    "condition_rate": 0.8,
+    "condition_rate": 0.95,
     "deobf_mode": "best-effort",
-    "dynamic_level": "medium",
+    "dynamic_level": "heavy",
     "dynamic_methods": {
       "attr": [
         "getattr",
         "builtins_getattr",
         "operator_attrgetter",
         "lambda_getattr",
-        "globals_getattr"
+        "globals_getattr",
+        "locals_getattr"
       ],
       "builtin": [
         "alias",
@@ -62,8 +64,8 @@
       "wrap": false
     },
     "float_mode": "mixed",
-    "flow_count": 1,
-    "flow_rate": 0.75,
+    "flow_count": 2,
+    "flow_rate": 0.9,
     "import_mode": "mixed",
     "import_rate": 0.8,
     "int_mode": "mixed",
@@ -71,12 +73,12 @@
       "count": 1,
       "position": "top"
     },
-    "level": 3,
+    "level": 4,
     "loop_mode": "mixed",
-    "loop_rate": 0.65,
-    "meta_minimal": false,
-    "meta_omit_helper_hints": false,
-    "meta_omit_rename_map": false,
+    "loop_rate": 0.85,
+    "meta_minimal": true,
+    "meta_omit_helper_hints": true,
+    "meta_omit_rename_map": true,
     "none_mode": "mixed",
     "order": [
       "imports",
@@ -92,73 +94,44 @@
       "none",
       "flow"
     ],
-    "passes": 2,
+    "passes": 3,
     "profile": "balanced",
     "rates": {
-      "attr_rate": 0.75,
-      "branch_rate": 0.45,
-      "builtin_rate": 0.9,
-      "call_rate": 0.65,
-      "condition_rate": 0.8,
-      "flow_rate": 0.75,
+      "attr_rate": 0.95,
+      "branch_rate": 0.85,
+      "builtin_rate": 0.95,
+      "call_rate": 0.9,
+      "condition_rate": 0.95,
+      "flow_rate": 0.9,
       "import_rate": 0.8,
-      "loop_rate": 0.65,
-      "setattr_rate": 0.8
+      "loop_rate": 0.85,
+      "setattr_rate": 0.95
     },
     "seed": 101,
     "setattr_mode": "mixed",
     "string": {
       "chunk_max": 6,
       "chunk_min": 1,
-      "mode": "mixed"
+      "helpers": 4,
+      "mode": "split"
     }
   },
-  "created_utc": "2026-02-18T06:48:39.429322+00:00",
+  "created_utc": "2026-02-18T07:57:14.193128+00:00",
   "format": "obfumeta-v2",
-  "helper_hints": {
-    "call_helpers": [
-      "_ooOlIl0O"
-    ],
-    "string_helpers": [
-      {
-        "modes": {
-          "b85": 189596,
-          "reverse": 17699,
-          "xor": 690044
-        },
-        "name": "_ool0OIlO"
-      }
-    ]
-  },
   "input_sha256": "678aeba871f85ff2e0ee85f044220e0799310525de32548f09caaed574f427cf",
-  "original_source_b85_zlib": "c-l>n&2GXl5QOi3im7`^q!1_-qKyQXJ_bUTNjAZfe<It7)FR%!P6BFu^vupTyRR?nA^7!0*)`b_{dc@N`_4G$UosFjZxt?5OIuTeAWg5SOd4aYcLpKKs6teAfHJ-F5r(8?j5XB4I&Y*_Ka`D94;1o>A-&5Kdzg(+VgC0N2XArmZm>-@Vl_JpY;&~EV}!C;{O1Rt^F%Ql0{JR6@dZNdJcSB6bvm`$$#~AOI!@w~-E<S2cTP7Pszn$~wv6RCV!H$BRF4OxNAmoCv6f#+Ylqteyd%5KVfPtu``h&qc26f_DPIUH4GDomq6%T8vO@5sP4AVB*|G&s(>3t|r+v9A@KJ6Ge3rX&p0i)Q7lT>",
-  "output_sha256": "76822d25d6a67d94543c054438a4ebbf6f2ec15e25940c8f8b6484946b571120",
-  "rename_map": {
-    "_junk_0": "_IOol10I0IOo",
-    "badge": "_OlIO1OlOIO",
-    "base": "_l0IloIOlI",
-    "greet": "_lll0O01",
-    "mean": "_loOIl101O1",
-    "normalize": "_OoIolo11ol",
-    "scores": "_olIOOoll",
-    "user": "_ol1100o1I1II1",
-    "v": "_o1O10oIo0OI1",
-    "values": "_o0lOlO1O",
-    "x": "_IolOIIlo0",
-    "y": "_OoOI1ooI"
-  },
+  "output_sha256": "001dbf6d355e132670202545a3000b796d27a3ab2dbf60e161a270052ce0ca95",
   "stats": {
-    "attrs": 17,
-    "bools": 12,
-    "branch_extensions": 5,
-    "builtins": 69,
+    "attrs": 114,
+    "bools": 50,
+    "branch_extensions": 57,
+    "builtins": 401,
     "bytes": 0,
-    "calls": 102,
-    "conditions": 13,
+    "calls": 823,
+    "conditions": 118,
     "floats": 3,
-    "flow_blocks": 6,
-    "imports": 2,
-    "ints": 453,
+    "flow_blocks": 30,
+    "imports": 5,
+    "ints": 2461,
     "junk_functions": 1,
     "loops": 0,
     "none": 0,
@@ -166,5 +139,7 @@
     "setattrs": 0,
     "strings": 5
   },
-  "warnings": []
+  "warnings": [
+    "meta-minimal: omitted source payload, rename_map and helper_hints"
+  ]
 }

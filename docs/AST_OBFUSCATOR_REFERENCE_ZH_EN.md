@@ -127,6 +127,8 @@ Resolution order:
 - `--builtin-rate 0.0..1.0`
 - `--flow-rate 0.0..1.0`
 - `--flow-count N`
+- `--string-helpers N` (number of emitted string decode helpers)
+- `--call-helpers N` (number of emitted call wrapper helpers)
 
 ### Metadata / deobfuscation
 - `--emit-map path.json`
@@ -229,6 +231,7 @@ python3 ast_obfuscator.py app.obf.py -o app.restore.py \
 - 对反射/动态元编程重度代码，请先小范围验证。
 - `--check` 只做 compile 检查，不等于完整行为测试。
 - `--wrap` 会做额外包装（多段 payload、随机解包步骤、轻量 anti-hook 检查），主要提升静态阅读成本，不等于加密壳。
+- 在 `--no-wrap` 场景下，可提高 `--string-helpers` / `--call-helpers` 并使用 `--string-mode split`，增加 helper 分散度与片段重组复杂度。
 
 ---
 
