@@ -3,9 +3,12 @@
     "attr_mode": "attrgetter",
     "attr_rate": 0.55,
     "bool_mode": "mixed",
+    "branch_rate": 0.2,
     "builtin_mode": "mixed",
     "bytes_mode": "mixed",
     "call_mode": "mixed",
+    "condition_mode": "mixed",
+    "condition_rate": 0.4,
     "deobf_mode": "best-effort",
     "dynamic_level": "safe",
     "dynamic_methods": {
@@ -18,7 +21,12 @@
       ],
       "call": [
         "helper_wrap",
-        "lambda_wrap"
+        "lambda_wrap",
+        "factory_lambda_call"
+      ],
+      "import": [
+        "importlib_import_module",
+        "builtins_import"
       ],
       "setattr": [
         "setattr",
@@ -34,9 +42,12 @@
       "builtins": true,
       "bytes": false,
       "calls": true,
+      "conditions": true,
       "floats": true,
       "flow": true,
+      "imports": false,
       "ints": true,
+      "loops": false,
       "none": true,
       "rename": true,
       "setattrs": true,
@@ -46,17 +57,24 @@
     "float_mode": "mixed",
     "flow_count": 1,
     "flow_rate": 0.3,
+    "import_mode": "mixed",
+    "import_rate": 0.35,
     "int_mode": "mixed",
     "junk": {
       "count": 0,
       "position": "top"
     },
     "level": 4,
+    "loop_mode": "mixed",
+    "loop_rate": 0.25,
     "none_mode": "mixed",
     "order": [
+      "imports",
       "attrs",
       "setattrs",
       "calls",
+      "conds",
+      "loops",
       "bools",
       "ints",
       "floats",
@@ -68,9 +86,13 @@
     "profile": "stealth",
     "rates": {
       "attr_rate": 0.55,
+      "branch_rate": 0.2,
       "builtin_rate": 0.6,
       "call_rate": 0.35,
+      "condition_rate": 0.4,
       "flow_rate": 0.3,
+      "import_rate": 0.35,
+      "loop_rate": 0.25,
       "setattr_rate": 0.45
     },
     "seed": 202,
@@ -81,31 +103,35 @@
       "mode": "mixed"
     }
   },
-  "created_utc": "2026-02-18T05:44:07.477177+00:00",
+  "created_utc": "2026-02-18T06:14:24.050001+00:00",
   "format": "obfumeta-v2",
   "input_sha256": "d720a4ffa69d98feb13817ad5841313adaac8e784214999d0e666ed080d06f95",
-  "output_sha256": "974ccaf9b7bdf19692e3a4b40af81e86cee2d89f27adcd8bbce1b4a1b0671357",
+  "output_sha256": "8269c97e004226d3d0d995a28a021f92c5deaac2586520ce4d1d447117ff36e9",
   "rename_map": {
-    "Wallet": "_o0",
-    "amount": "_o3",
-    "owner": "_o2",
-    "run_demo": "_o4",
-    "self": "_o1",
-    "w": "_o5"
+    "Wallet": "_oooII1oloool",
+    "amount": "_lIOoooOlI1l",
+    "owner": "_ooIoo1111",
+    "run_demo": "_lOlIIIlOII",
+    "self": "_OIo1010I",
+    "w": "_IIO1OIOOOo"
   },
   "stats": {
-    "attrs": 7,
-    "bools": 2,
-    "builtins": 8,
+    "attrs": 5,
+    "bools": 4,
+    "branch_extensions": 0,
+    "builtins": 10,
     "bytes": 0,
-    "calls": 21,
+    "calls": 12,
+    "conditions": 3,
     "floats": 0,
-    "flow_blocks": 0,
-    "ints": 89,
+    "flow_blocks": 1,
+    "imports": 0,
+    "ints": 61,
     "junk_functions": 0,
+    "loops": 0,
     "none": 2,
     "renamed": 6,
-    "setattrs": 1,
+    "setattrs": 0,
     "strings": 6
   },
   "warnings": []

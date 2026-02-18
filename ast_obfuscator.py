@@ -1017,6 +1017,81 @@ def decode_obf_text_expr(node: ast.AST) -> str | None:
     return None
 
 
+def build_dead_noop_expr(rng: random.Random) -> ast.expr:
+    style = rng.choice(("arith", "tuple_pick", "bool_chain", "lambda_call", "ifexp"))
+    if style == "tuple_pick":
+        left = rng.randint(1000, 9000)
+        right = left + rng.randint(7, 133)
+        return ast.Subscript(
+            value=ast.Tuple(elts=[ast.Constant(left), ast.Constant(right)], ctx=ast.Load()),
+            slice=ast.IfExp(
+                test=ast.Compare(
+                    left=ast.Constant(left),
+                    ops=[ast.Eq()],
+                    comparators=[ast.Constant(right)],
+                ),
+                body=ast.Constant(0),
+                orelse=ast.Constant(1),
+            ),
+            ctx=ast.Load(),
+        )
+    if style == "bool_chain":
+        a = rng.randint(100, 900)
+        b = a + rng.randint(1, 91)
+        c = rng.randint(100, 900)
+        return ast.BoolOp(
+            op=ast.Or(),
+            values=[
+                ast.Compare(left=ast.Constant(a), ops=[ast.Eq()], comparators=[ast.Constant(b)]),
+                ast.Compare(left=ast.Constant(c), ops=[ast.NotEq()], comparators=[ast.Constant(c)]),
+            ],
+        )
+    if style == "lambda_call":
+        key = rng.randint(5, 250)
+        val = rng.randint(1000, 9999)
+        return ast.Call(
+            func=ast.Lambda(
+                args=ast.arguments(
+                    posonlyargs=[],
+                    args=[ast.arg(arg="_n")],
+                    kwonlyargs=[],
+                    kw_defaults=[],
+                    defaults=[],
+                ),
+                body=ast.BinOp(
+                    left=ast.Name(id="_n", ctx=ast.Load()),
+                    op=ast.BitXor(),
+                    right=ast.Constant(key),
+                ),
+            ),
+            args=[ast.Constant(val ^ key)],
+            keywords=[],
+        )
+    if style == "ifexp":
+        x = rng.randint(100, 400)
+        y = x + rng.randint(1, 30)
+        return ast.IfExp(
+            test=ast.Compare(left=ast.Constant(x), ops=[ast.Eq()], comparators=[ast.Constant(y)]),
+            body=ast.Constant(x),
+            orelse=ast.Constant(y),
+        )
+    a = rng.randint(1000, 9999)
+    b = rng.randint(100, 999)
+    c = rng.randint(1, 50)
+    return ast.BinOp(
+        left=ast.BinOp(left=ast.Constant(a ^ b), op=ast.BitXor(), right=ast.Constant(b)),
+        op=ast.Add(),
+        right=ast.Constant(c - c),
+    )
+
+
+def build_dead_noop_body(rng: random.Random) -> list[ast.stmt]:
+    body: list[ast.stmt] = [ast.Expr(value=build_dead_noop_expr(rng))]
+    if rng.random() < 0.45:
+        body.append(ast.Expr(value=build_dead_noop_expr(rng)))
+    return body
+
+
 class AttributeLoadObfuscator(ast.NodeTransformer):
     def __init__(
         self,
@@ -1483,7 +1558,7 @@ class FlowObfuscator(ast.NodeTransformer):
                 ops=[ast.Eq()],
                 comparators=[ast.Constant(b)],
             ),
-            body=[ast.Pass()],
+            body=build_dead_noop_body(self.rng),
             orelse=[],
         )
 
@@ -1530,7 +1605,7 @@ class ImportObfuscator(ast.NodeTransformer):
         self.mode = mode
         self.rate = max(0.0, min(1.0, rate))
         self.methods = methods
-        self.generator = NameGenerator(used_names)
+        self.generator = NameGenerator(used_names, rng)
         self.changed = 0
         self.class_depth = 0
 
@@ -1693,8 +1768,6 @@ class ConditionObfuscator(ast.NodeTransformer):
         return self._encode_test(test)
 
     def _looks_like_injected_dead_if(self, node: ast.If) -> bool:
-        if len(node.body) != 1 or not isinstance(node.body[0], ast.Pass):
-            return False
         if not isinstance(node.test, ast.Compare):
             return False
         if (
@@ -1707,7 +1780,10 @@ class ConditionObfuscator(ast.NodeTransformer):
             or not isinstance(node.test.comparators[0].value, int)
         ):
             return False
-        return node.test.left.value != node.test.comparators[0].value
+        if node.test.left.value == node.test.comparators[0].value:
+            return False
+        # Flow/dead-branch blocks here are emitted as expression-only no-op bodies.
+        return bool(node.body) and all(isinstance(stmt, ast.Expr) for stmt in node.body)
 
     def _extend_branch(self, node: ast.If) -> None:
         if self.rng.random() > self.branch_rate:
@@ -1718,7 +1794,7 @@ class ConditionObfuscator(ast.NodeTransformer):
         right = left + self.rng.randint(1, 101)
         dead = ast.If(
             test=ast.Compare(left=ast.Constant(left), ops=[ast.Eq()], comparators=[ast.Constant(right)]),
-            body=[ast.Pass()],
+            body=build_dead_noop_body(self.rng),
             orelse=node.orelse,
         )
         node.orelse = [dead]
@@ -1751,7 +1827,7 @@ class LoopEncoder(ast.NodeTransformer):
         self.rng = rng
         self.mode = mode
         self.rate = max(0.0, min(1.0, rate))
-        self.generator = NameGenerator(used_names)
+        self.generator = NameGenerator(used_names, rng)
         self.changed = 0
 
     def _use_guard_mode(self) -> bool:
@@ -2752,7 +2828,7 @@ def obfuscate_source(
     rename_map: dict[str, str] = {}
     if config.rename:
         used = collect_identifiers(tree) | config.preserve_names
-        generator = NameGenerator(used)
+        generator = NameGenerator(used, rng)
         collector = RenameCollector(config.preserve_names, generator)
         collector.visit(tree)
         rename_map = collector.mapping
@@ -2890,7 +2966,7 @@ def obfuscate_source(
         builtin_targets = collect_builtin_loads(tree, config.preserve_names)
         if builtin_targets:
             used = collect_identifiers(tree) | config.preserve_names
-            generator = NameGenerator(used)
+            generator = NameGenerator(used, rng)
             builtin_map = {name: generator.next_name() for name in builtin_targets}
             builtin_transform = BuiltinAliasTransformer(builtin_map, config.builtin_rate, rng)
             tree = builtin_transform.visit(tree)

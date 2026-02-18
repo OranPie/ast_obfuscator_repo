@@ -1,4 +1,4 @@
-Obfuscate:
+# Obfuscate
 python3 ast_obfuscator.py examples/case03_max_dynamic/src.py -o examples/case03_max_dynamic/obf.py \
   --profile max --level 5 --dynamic-level heavy --seed 303 \
   --dynamic-allow call:builtins_eval_call,attr:locals_getattr \
@@ -6,6 +6,6 @@ python3 ast_obfuscator.py examples/case03_max_dynamic/src.py -o examples/case03_
   --emit-meta examples/case03_max_dynamic/meta.json \
   --check --explain
 
-Deobfuscate (best-effort):
+# Deobfuscate (best-effort)
 python3 ast_obfuscator.py examples/case03_max_dynamic/obf.py -o examples/case03_max_dynamic/deobf.py \
   --deobfuscate --meta examples/case03_max_dynamic/meta.json --deobf-mode best-effort
