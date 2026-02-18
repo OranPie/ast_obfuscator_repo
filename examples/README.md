@@ -22,6 +22,10 @@ This folder contains multiple source scripts, their obfuscated outputs, and deob
   - `src.py`, `obf.py`, `deobf.py`, `map.json`, `meta.json`, `config.txt`
   - max profile + heavy dynamic methods + risky call method opt-in
 
+- `case04_import_cond_loop/`
+  - `src.py`, `obf.py`, `deobf.py`, `map.json`, `meta.json`, `config.txt`
+  - import obfuscation + condition/branch encoding + loop encoding demo
+
 ## Re-generate all examples
 
 ```bash
@@ -34,4 +38,7 @@ python3 ast_obfuscator.py examples/case02_stealth/obf.py -o examples/case02_stea
 
 python3 ast_obfuscator.py examples/case03_max_dynamic/src.py -o examples/case03_max_dynamic/obf.py --profile max --level 5 --dynamic-level heavy --seed 303 --dynamic-allow call:builtins_eval_call,attr:locals_getattr --emit-map examples/case03_max_dynamic/map.json --emit-meta examples/case03_max_dynamic/meta.json --check
 python3 ast_obfuscator.py examples/case03_max_dynamic/obf.py -o examples/case03_max_dynamic/deobf.py --deobfuscate --meta examples/case03_max_dynamic/meta.json --deobf-mode best-effort
+
+python3 ast_obfuscator.py examples/case04_import_cond_loop/src.py -o examples/case04_import_cond_loop/obf.py --profile balanced --level 3 --seed 404 --imports --conditions --loops --import-mode mixed --condition-mode mixed --loop-mode iterator --import-rate 1.0 --condition-rate 0.9 --branch-rate 0.8 --loop-rate 1.0 --emit-map examples/case04_import_cond_loop/map.json --emit-meta examples/case04_import_cond_loop/meta.json --no-wrap --check
+python3 ast_obfuscator.py examples/case04_import_cond_loop/obf.py -o examples/case04_import_cond_loop/deobf.py --deobfuscate --meta examples/case04_import_cond_loop/meta.json --deobf-mode best-effort
 ```

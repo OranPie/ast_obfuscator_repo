@@ -5,10 +5,12 @@ Features
 - Level presets (`--level 1..5`)
 - Fine-grained toggles (`--[no-]rename`, `--[no-]strings`, `--[no-]ints`,
   `--[no-]floats`, `--[no-]bytes`, `--[no-]none`, `--[no-]bools`,
+  `--[no-]imports`, `--[no-]conditions`, `--[no-]loops`,
   `--[no-]flow`, `--[no-]attrs`, `--[no-]setattrs`, `--[no-]calls`,
   `--[no-]builtins`, `--[no-]wrap`)
 - Type methods (`--string-mode`, `--int-mode`, `--float-mode`, `--bytes-mode`, `--none-mode`)
-- Transformation order and density (`--order`, `--attr-mode`, `--attr-rate`, `--flow-rate`, `--flow-count`)
+- Transformation order and density (`--order`, `--import-rate`, `--condition-rate`,
+  `--branch-rate`, `--loop-rate`, `--attr-rate`, `--flow-rate`, `--flow-count`)
 - Multiple transformation passes (`--passes`)
 - Junk function injection (`--junk`, `--junk-position`)
 - Deterministic builds (`--seed`)
@@ -25,6 +27,7 @@ import argparse
 import ast
 import base64
 import builtins
+import copy
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -40,8 +43,21 @@ from typing import Iterable
 
 
 BUILTIN_NAMES = set(dir(builtins))
-PASS_TRANSFORMS = ("attrs", "setattrs", "calls", "bools", "ints", "floats", "bytes", "none", "flow")
-METHOD_FAMILIES = ("attr", "setattr", "call", "builtin")
+PASS_TRANSFORMS = (
+    "imports",
+    "attrs",
+    "setattrs",
+    "calls",
+    "conds",
+    "loops",
+    "bools",
+    "ints",
+    "floats",
+    "bytes",
+    "none",
+    "flow",
+)
+METHOD_FAMILIES = ("attr", "setattr", "call", "builtin", "import")
 
 AVAILABLE_METHODS: dict[str, tuple[str, ...]] = {
     "attr": (
@@ -63,12 +79,18 @@ AVAILABLE_METHODS: dict[str, tuple[str, ...]] = {
     "call": (
         "helper_wrap",
         "lambda_wrap",
+        "factory_lambda_call",
         "builtins_eval_call",
     ),
     "builtin": (
         "alias",
         "builtins_getattr_alias",
         "globals_lookup",
+    ),
+    "import": (
+        "importlib_import_module",
+        "builtins_import",
+        "dunder_import_module",
     ),
 }
 
@@ -78,8 +100,9 @@ DYNAMIC_LEVEL_DEFAULTS: dict[str, dict[str, tuple[str, ...]]] = {
     "safe": {
         "attr": ("getattr", "builtins_getattr", "operator_attrgetter", "lambda_getattr"),
         "setattr": ("setattr", "delattr", "builtins_setattr", "builtins_delattr", "lambda_setattr"),
-        "call": ("helper_wrap", "lambda_wrap"),
+        "call": ("helper_wrap", "lambda_wrap", "factory_lambda_call"),
         "builtin": ("alias", "builtins_getattr_alias"),
+        "import": ("importlib_import_module", "builtins_import"),
     },
     "medium": {
         "attr": (
@@ -97,14 +120,16 @@ DYNAMIC_LEVEL_DEFAULTS: dict[str, dict[str, tuple[str, ...]]] = {
             "lambda_setattr",
             "lambda_delattr",
         ),
-        "call": ("helper_wrap", "lambda_wrap"),
+        "call": ("helper_wrap", "lambda_wrap", "factory_lambda_call"),
         "builtin": ("alias", "builtins_getattr_alias", "globals_lookup"),
+        "import": ("importlib_import_module", "builtins_import", "dunder_import_module"),
     },
     "heavy": {
         "attr": AVAILABLE_METHODS["attr"],
         "setattr": AVAILABLE_METHODS["setattr"],
         "call": AVAILABLE_METHODS["call"],
         "builtin": AVAILABLE_METHODS["builtin"],
+        "import": AVAILABLE_METHODS["import"],
     },
 }
 
@@ -124,6 +149,9 @@ class ObfuscationConfig:
     none_values: bool
     bools: bool
     flow: bool
+    imports: bool
+    conditions: bool
+    loops: bool
     attrs: bool
     setattrs: bool
     calls: bool
@@ -140,8 +168,15 @@ class ObfuscationConfig:
     call_mode: str
     setattr_mode: str
     builtin_mode: str
+    import_mode: str
+    condition_mode: str
+    loop_mode: str
     attr_mode: str
+    import_rate: float
     flow_rate: float
+    condition_rate: float
+    branch_rate: float
+    loop_rate: float
     attr_rate: float
     setattr_rate: float
     call_rate: float
@@ -171,6 +206,10 @@ class ObfuscationStats:
     bytes_: int = 0
     none_values: int = 0
     bools: int = 0
+    imports: int = 0
+    conditions: int = 0
+    branch_extensions: int = 0
+    loops: int = 0
     flow_blocks: int = 0
     attrs: int = 0
     setattrs: int = 0
@@ -181,11 +220,26 @@ class ObfuscationStats:
 
 
 class NameGenerator:
-    def __init__(self, used: Iterable[str]) -> None:
+    def __init__(self, used: Iterable[str], rng: random.Random | None = None) -> None:
         self.used = set(used)
         self.counter = 0
+        self.rng = rng
+
+    def _random_name(self) -> str:
+        assert self.rng is not None
+        # Ambiguous mixed-shape names are harder to visually track.
+        first = self.rng.choice("lIOo")
+        size = self.rng.randint(6, 12)
+        tail = "".join(self.rng.choice("lIOo01") for _ in range(size))
+        return f"_{first}{tail}"
 
     def next_name(self) -> str:
+        if self.rng is not None:
+            for _ in range(2048):
+                name = self._random_name()
+                if name not in self.used and not keyword.iskeyword(name):
+                    self.used.add(name)
+                    return name
         while True:
             name = f"_o{self.counter:x}"
             self.counter += 1
@@ -790,6 +844,179 @@ class BoolObfuscator(ast.NodeTransformer):
         return ast.copy_location(expr, node)
 
 
+def _split_text_chunks(text: str, rng: random.Random, min_size: int = 1, max_size: int = 4) -> list[str]:
+    if not text:
+        return [text]
+    pieces: list[str] = []
+    idx = 0
+    max_size = max(min_size, max_size)
+    while idx < len(text):
+        hi = min(max_size, len(text) - idx)
+        lo = min(min_size, hi)
+        step = rng.randint(lo, hi)
+        pieces.append(text[idx : idx + step])
+        idx += step
+    return pieces
+
+
+def build_text_expr(text: str, rng: random.Random) -> ast.expr:
+    styles = ["plain", "join", "concat", "hex", "format"]
+    if text:
+        styles.append("chr_join")
+    style = rng.choice(styles)
+    if style == "join":
+        return ast.Call(
+            func=ast.Attribute(value=ast.Constant(""), attr="join", ctx=ast.Load()),
+            args=[ast.Tuple(elts=[ast.Constant(part) for part in _split_text_chunks(text, rng)], ctx=ast.Load())],
+            keywords=[],
+        )
+    if style == "concat" and len(text) > 1:
+        parts = _split_text_chunks(text, rng)
+        expr: ast.expr = ast.Constant(parts[0])
+        for part in parts[1:]:
+            expr = ast.BinOp(left=expr, op=ast.Add(), right=ast.Constant(part))
+        return expr
+    if style == "hex":
+        return ast.Call(
+            func=ast.Attribute(
+                value=ast.Call(
+                    func=ast.Attribute(value=ast.Name(id="bytes", ctx=ast.Load()), attr="fromhex", ctx=ast.Load()),
+                    args=[ast.Constant(text.encode("utf-8").hex())],
+                    keywords=[],
+                ),
+                attr="decode",
+                ctx=ast.Load(),
+            ),
+            args=[ast.Constant("utf-8")],
+            keywords=[],
+        )
+    if style == "format" and len(text) > 1:
+        parts = _split_text_chunks(text, rng, 1, 3)
+        fmt = "".join("{}" for _ in parts)
+        return ast.Call(
+            func=ast.Attribute(value=ast.Constant(fmt), attr="format", ctx=ast.Load()),
+            args=[ast.Constant(part) for part in parts],
+            keywords=[],
+        )
+    if style == "chr_join":
+        codes = [ord(ch) for ch in text]
+        return ast.Call(
+            func=ast.Attribute(value=ast.Constant(""), attr="join", ctx=ast.Load()),
+            args=[
+                ast.GeneratorExp(
+                    elt=ast.Call(
+                        func=ast.Name(id="chr", ctx=ast.Load()),
+                        args=[ast.Name(id="_c", ctx=ast.Load())],
+                        keywords=[],
+                    ),
+                    generators=[
+                        ast.comprehension(
+                            target=ast.Name(id="_c", ctx=ast.Store()),
+                            iter=ast.Tuple(elts=[ast.Constant(code) for code in codes], ctx=ast.Load()),
+                            ifs=[],
+                            is_async=0,
+                        )
+                    ],
+                )
+            ],
+            keywords=[],
+        )
+    return ast.Constant(text)
+
+
+def decode_obf_text_expr(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = decode_obf_text_expr(node.left)
+        right = decode_obf_text_expr(node.right)
+        if left is not None and right is not None:
+            return left + right
+        return None
+
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Constant)
+        and isinstance(node.func.value.value, str)
+        and node.func.attr == "join"
+        and len(node.args) == 1
+    ):
+        seq = node.args[0]
+        if isinstance(seq, ast.Tuple):
+            parts: list[str] = []
+            for item in seq.elts:
+                part = decode_obf_text_expr(item)
+                if part is None:
+                    return None
+                parts.append(part)
+            return "".join(parts)
+        if (
+            isinstance(seq, ast.GeneratorExp)
+            and len(seq.generators) == 1
+            and isinstance(seq.elt, ast.Call)
+            and isinstance(seq.elt.func, ast.Name)
+            and seq.elt.func.id == "chr"
+            and len(seq.elt.args) == 1
+            and isinstance(seq.elt.args[0], ast.Name)
+            and isinstance(seq.generators[0].target, ast.Name)
+            and seq.generators[0].target.id == seq.elt.args[0].id
+            and isinstance(seq.generators[0].iter, ast.Tuple)
+        ):
+            chars: list[str] = []
+            for item in seq.generators[0].iter.elts:
+                if not isinstance(item, ast.Constant) or not isinstance(item.value, int):
+                    return None
+                chars.append(chr(item.value))
+            return "".join(chars)
+        return None
+
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Constant)
+        and isinstance(node.func.value.value, str)
+        and node.func.attr == "format"
+    ):
+        fmt = node.func.value.value
+        args: list[str] = []
+        for arg in node.args:
+            val = decode_obf_text_expr(arg)
+            if val is None:
+                return None
+            args.append(val)
+        try:
+            return fmt.format(*args)
+        except Exception:
+            return None
+
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "decode"
+        and isinstance(node.func.value, ast.Call)
+        and isinstance(node.func.value.func, ast.Attribute)
+        and isinstance(node.func.value.func.value, ast.Name)
+        and node.func.value.func.value.id == "bytes"
+        and node.func.value.func.attr == "fromhex"
+        and len(node.func.value.args) == 1
+        and isinstance(node.func.value.args[0], ast.Constant)
+        and isinstance(node.func.value.args[0].value, str)
+    ):
+        codec = "utf-8"
+        if node.args:
+            if not (isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)):
+                return None
+            codec = node.args[0].value
+        try:
+            return bytes.fromhex(node.func.value.args[0].value).decode(codec)
+        except Exception:
+            return None
+
+    return None
+
+
 class AttributeLoadObfuscator(ast.NodeTransformer):
     def __init__(
         self,
@@ -807,39 +1034,7 @@ class AttributeLoadObfuscator(ast.NodeTransformer):
         self.changed = 0
 
     def _attr_name_expr(self, attr: str) -> ast.expr:
-        style = self.rng.choice(("plain", "join", "chr"))
-        if style == "join" and len(attr) > 1:
-            return ast.Call(
-                func=ast.Attribute(value=ast.Constant(""), attr="join", ctx=ast.Load()),
-                args=[ast.Tuple(elts=[ast.Constant(ch) for ch in attr], ctx=ast.Load())],
-                keywords=[],
-            )
-        if style == "chr":
-            return ast.Call(
-                func=ast.Attribute(value=ast.Constant(""), attr="join", ctx=ast.Load()),
-                args=[
-                    ast.GeneratorExp(
-                        elt=ast.Call(
-                            func=ast.Name(id="chr", ctx=ast.Load()),
-                            args=[ast.Name(id="_c", ctx=ast.Load())],
-                            keywords=[],
-                        ),
-                        generators=[
-                            ast.comprehension(
-                                target=ast.Name(id="_c", ctx=ast.Store()),
-                                iter=ast.Tuple(
-                                    elts=[ast.Constant(ord(ch)) for ch in attr],
-                                    ctx=ast.Load(),
-                                ),
-                                ifs=[],
-                                is_async=0,
-                            )
-                        ],
-                    )
-                ],
-                keywords=[],
-            )
-        return ast.Constant(attr)
+        return build_text_expr(attr, self.rng)
 
     def _pick_method(self) -> str:
         explicit_map = {
@@ -988,6 +1183,9 @@ class SetAttrRewriter(ast.NodeTransformer):
             return self.rng.choice(choices)
         return "setattr"
 
+    def _attr_name_expr(self, attr_name: str) -> ast.expr:
+        return build_text_expr(attr_name, self.rng)
+
     def _pick_del_method(self) -> str:
         explicit_map = {
             "setattr": "delattr",
@@ -1003,6 +1201,7 @@ class SetAttrRewriter(ast.NodeTransformer):
 
     def _set_expr(self, obj: ast.expr, attr_name: str, value: ast.expr) -> ast.expr:
         method = self._pick_set_method()
+        attr_expr = self._attr_name_expr(attr_name)
         if method == "builtins_setattr":
             return ast.Call(
                 func=ast.Attribute(
@@ -1010,7 +1209,7 @@ class SetAttrRewriter(ast.NodeTransformer):
                     attr="setattr",
                     ctx=ast.Load(),
                 ),
-                args=[obj, ast.Constant(attr_name), value],
+                args=[obj, attr_expr, value],
                 keywords=[],
             )
         if method == "lambda_setattr":
@@ -1028,15 +1227,16 @@ class SetAttrRewriter(ast.NodeTransformer):
                     keywords=[],
                 ),
             )
-            return ast.Call(func=lam, args=[obj, ast.Constant(attr_name), value], keywords=[])
+            return ast.Call(func=lam, args=[obj, attr_expr, value], keywords=[])
         return ast.Call(
             func=ast.Name(id="setattr", ctx=ast.Load()),
-            args=[obj, ast.Constant(attr_name), value],
+            args=[obj, attr_expr, value],
             keywords=[],
         )
 
     def _del_expr(self, obj: ast.expr, attr_name: str) -> ast.expr:
         method = self._pick_del_method()
+        attr_expr = self._attr_name_expr(attr_name)
         if method == "builtins_delattr":
             return ast.Call(
                 func=ast.Attribute(
@@ -1044,7 +1244,7 @@ class SetAttrRewriter(ast.NodeTransformer):
                     attr="delattr",
                     ctx=ast.Load(),
                 ),
-                args=[obj, ast.Constant(attr_name)],
+                args=[obj, attr_expr],
                 keywords=[],
             )
         if method == "lambda_delattr":
@@ -1062,10 +1262,10 @@ class SetAttrRewriter(ast.NodeTransformer):
                     keywords=[],
                 ),
             )
-            return ast.Call(func=lam, args=[obj, ast.Constant(attr_name)], keywords=[])
+            return ast.Call(func=lam, args=[obj, attr_expr], keywords=[])
         return ast.Call(
             func=ast.Name(id="delattr", ctx=ast.Load()),
-            args=[obj, ast.Constant(attr_name)],
+            args=[obj, attr_expr],
             keywords=[],
         )
 
@@ -1165,11 +1365,46 @@ class CallObfuscator(ast.NodeTransformer):
         )
         return ast.Call(func=compiled_lam, args=[func, args_tuple, kwargs_dict], keywords=[])
 
+    def _factory_lambda_wrap(self, func: ast.expr, args: list[ast.expr], keywords: list[ast.keyword]) -> ast.expr:
+        args_tuple = ast.Tuple(elts=args, ctx=ast.Load())
+        kwargs_dict = self._kwargs_dict(keywords)
+        factory = ast.Lambda(
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="_f"), ast.arg(arg="_a"), ast.arg(arg="_k")],
+                kwonlyargs=[],
+                kw_defaults=[],
+                defaults=[],
+            ),
+            body=ast.Call(
+                func=ast.Lambda(
+                    args=ast.arguments(
+                        posonlyargs=[],
+                        args=[],
+                        vararg=ast.arg(arg="_x"),
+                        kwonlyargs=[],
+                        kw_defaults=[],
+                        kwarg=ast.arg(arg="_y"),
+                        defaults=[],
+                    ),
+                    body=ast.Call(
+                        func=ast.Name(id="_f", ctx=ast.Load()),
+                        args=[ast.Starred(value=ast.Name(id="_x", ctx=ast.Load()), ctx=ast.Load())],
+                        keywords=[ast.keyword(arg=None, value=ast.Name(id="_y", ctx=ast.Load()))],
+                    ),
+                ),
+                args=[ast.Starred(value=ast.Name(id="_a", ctx=ast.Load()), ctx=ast.Load())],
+                keywords=[ast.keyword(arg=None, value=ast.Name(id="_k", ctx=ast.Load()))],
+            ),
+        )
+        return ast.Call(func=factory, args=[func, args_tuple, kwargs_dict], keywords=[])
+
     def _pick_method(self) -> str:
         explicit_map = {
             "wrap": "helper_wrap",
             "lambda": "lambda_wrap",
             "eval": "builtins_eval_call",
+            "factory": "factory_lambda_call",
         }
         if self.mode in explicit_map:
             return explicit_map[self.mode]
@@ -1193,6 +1428,8 @@ class CallObfuscator(ast.NodeTransformer):
             replaced = self._lambda_wrap(node.func, node.args, node.keywords)
         elif method == "builtins_eval_call":
             replaced = self._eval_wrap(node.func, node.args, node.keywords)
+        elif method == "factory_lambda_call":
+            replaced = self._factory_lambda_wrap(node.func, node.args, node.keywords)
         else:
             replaced = ast.Call(
                 func=ast.Name(id=self.helper_name, ctx=ast.Load()),
@@ -1280,6 +1517,338 @@ class FlowObfuscator(ast.NodeTransformer):
         return node
 
 
+class ImportObfuscator(ast.NodeTransformer):
+    def __init__(
+        self,
+        rng: random.Random,
+        mode: str,
+        rate: float,
+        methods: tuple[str, ...],
+        used_names: set[str],
+    ) -> None:
+        self.rng = rng
+        self.mode = mode
+        self.rate = max(0.0, min(1.0, rate))
+        self.methods = methods
+        self.generator = NameGenerator(used_names)
+        self.changed = 0
+        self.class_depth = 0
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
+        self.class_depth += 1
+        self.generic_visit(node)
+        self.class_depth -= 1
+        return node
+
+    def _pick_method(self) -> str:
+        explicit_map = {
+            "importlib": "importlib_import_module",
+            "builtins": "builtins_import",
+            "dunder": "dunder_import_module",
+        }
+        if self.mode in explicit_map:
+            return explicit_map[self.mode]
+        if self.methods:
+            return self.rng.choice(self.methods)
+        return "importlib_import_module"
+
+    def _import_module_expr(self, module_name: str) -> ast.expr:
+        method = self._pick_method()
+        module_expr = build_text_expr(module_name, self.rng)
+        if method == "builtins_import":
+            return ast.Call(
+                func=ast.Name(id="__import__", ctx=ast.Load()),
+                args=[
+                    module_expr,
+                    ast.Call(func=ast.Name(id="globals", ctx=ast.Load()), args=[], keywords=[]),
+                    ast.Call(func=ast.Name(id="locals", ctx=ast.Load()), args=[], keywords=[]),
+                    ast.Tuple(elts=[ast.Constant("_")], ctx=ast.Load()),
+                    ast.Constant(0),
+                ],
+                keywords=[],
+            )
+        importlib_mod = ast.Call(
+            func=ast.Name(id="__import__", ctx=ast.Load()),
+            args=[ast.Constant("importlib")],
+            keywords=[],
+        )
+        if method == "dunder_import_module":
+            importer: ast.expr = ast.Call(
+                func=ast.Name(id="getattr", ctx=ast.Load()),
+                args=[importlib_mod, build_text_expr("import_module", self.rng)],
+                keywords=[],
+            )
+            return ast.Call(func=importer, args=[module_expr], keywords=[])
+        return ast.Call(
+            func=ast.Attribute(value=importlib_mod, attr="import_module", ctx=ast.Load()),
+            args=[module_expr],
+            keywords=[],
+        )
+
+    def visit_Import(self, node: ast.Import) -> ast.AST:
+        if self.class_depth > 0 or self.rng.random() > self.rate:
+            return node
+        passthrough: list[ast.alias] = []
+        out: list[ast.stmt] = []
+        for alias in node.names:
+            # Keep `import pkg.mod` without alias untouched to avoid root-module binding changes.
+            if "." in alias.name and alias.asname is None:
+                passthrough.append(alias)
+                continue
+            bind_name = alias.asname or alias.name.split(".")[0]
+            assign = ast.Assign(
+                targets=[ast.Name(id=bind_name, ctx=ast.Store())],
+                value=self._import_module_expr(alias.name),
+            )
+            out.append(ast.copy_location(assign, node))
+            self.changed += 1
+        if passthrough:
+            out.insert(0, ast.copy_location(ast.Import(names=passthrough), node))
+        if not out:
+            return node
+        return out
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.AST:
+        if self.class_depth > 0 or self.rng.random() > self.rate:
+            return node
+        if node.level != 0 or node.module is None:
+            return node
+        if any(alias.name == "*" for alias in node.names):
+            return node
+
+        module_ref = self.generator.next_name()
+        module_assign = ast.Assign(
+            targets=[ast.Name(id=module_ref, ctx=ast.Store())],
+            value=self._import_module_expr(node.module),
+        )
+        out: list[ast.stmt] = [ast.copy_location(module_assign, node)]
+        for alias in node.names:
+            bind_name = alias.asname or alias.name
+            attr_expr = ast.Call(
+                func=ast.Name(id="getattr", ctx=ast.Load()),
+                args=[ast.Name(id=module_ref, ctx=ast.Load()), build_text_expr(alias.name, self.rng)],
+                keywords=[],
+            )
+            assign = ast.Assign(targets=[ast.Name(id=bind_name, ctx=ast.Store())], value=attr_expr)
+            out.append(ast.copy_location(assign, node))
+            self.changed += 1
+        return out
+
+
+class ConditionObfuscator(ast.NodeTransformer):
+    def __init__(self, rng: random.Random, mode: str, rate: float, branch_rate: float) -> None:
+        self.rng = rng
+        self.mode = mode
+        self.rate = max(0.0, min(1.0, rate))
+        self.branch_rate = max(0.0, min(1.0, branch_rate))
+        self.changed = 0
+        self.branch_extended = 0
+
+    def _pick_mode(self) -> str:
+        if self.mode != "mixed":
+            return self.mode
+        return self.rng.choice(("double_not", "ifexp", "bool_call", "lambda_call", "tuple_pick"))
+
+    def _encode_test(self, test: ast.expr) -> ast.expr:
+        mode = self._pick_mode()
+        if mode == "double_not":
+            return ast.UnaryOp(op=ast.Not(), operand=ast.UnaryOp(op=ast.Not(), operand=test))
+        if mode == "ifexp":
+            return ast.Compare(
+                left=ast.IfExp(test=test, body=ast.Constant(1), orelse=ast.Constant(0)),
+                ops=[ast.Eq()],
+                comparators=[ast.Constant(1)],
+            )
+        if mode == "lambda_call":
+            return ast.Call(
+                func=ast.Lambda(
+                    args=ast.arguments(
+                        posonlyargs=[],
+                        args=[ast.arg(arg="_v")],
+                        kwonlyargs=[],
+                        kw_defaults=[],
+                        defaults=[],
+                    ),
+                    body=ast.Call(
+                        func=ast.Name(id="bool", ctx=ast.Load()),
+                        args=[ast.Name(id="_v", ctx=ast.Load())],
+                        keywords=[],
+                    ),
+                ),
+                args=[test],
+                keywords=[],
+            )
+        if mode == "tuple_pick":
+            return ast.Subscript(
+                value=ast.Tuple(elts=[ast.Constant(False), ast.Constant(True)], ctx=ast.Load()),
+                slice=ast.IfExp(test=test, body=ast.Constant(1), orelse=ast.Constant(0)),
+                ctx=ast.Load(),
+            )
+        return ast.Call(func=ast.Name(id="bool", ctx=ast.Load()), args=[test], keywords=[])
+
+    def _maybe_encode(self, test: ast.expr) -> ast.expr:
+        if self.rng.random() > self.rate:
+            return test
+        self.changed += 1
+        return self._encode_test(test)
+
+    def _looks_like_injected_dead_if(self, node: ast.If) -> bool:
+        if len(node.body) != 1 or not isinstance(node.body[0], ast.Pass):
+            return False
+        if not isinstance(node.test, ast.Compare):
+            return False
+        if (
+            len(node.test.ops) != 1
+            or not isinstance(node.test.ops[0], ast.Eq)
+            or len(node.test.comparators) != 1
+            or not isinstance(node.test.left, ast.Constant)
+            or not isinstance(node.test.comparators[0], ast.Constant)
+            or not isinstance(node.test.left.value, int)
+            or not isinstance(node.test.comparators[0].value, int)
+        ):
+            return False
+        return node.test.left.value != node.test.comparators[0].value
+
+    def _extend_branch(self, node: ast.If) -> None:
+        if self.rng.random() > self.branch_rate:
+            return
+        if node.orelse and isinstance(node.orelse[0], ast.If) and self._looks_like_injected_dead_if(node.orelse[0]):
+            return
+        left = self.rng.randint(1000, 9000)
+        right = left + self.rng.randint(1, 101)
+        dead = ast.If(
+            test=ast.Compare(left=ast.Constant(left), ops=[ast.Eq()], comparators=[ast.Constant(right)]),
+            body=[ast.Pass()],
+            orelse=node.orelse,
+        )
+        node.orelse = [dead]
+        self.branch_extended += 1
+
+    def visit_If(self, node: ast.If) -> ast.AST:
+        self.generic_visit(node)
+        node.test = self._maybe_encode(node.test)
+        self._extend_branch(node)
+        return node
+
+    def visit_While(self, node: ast.While) -> ast.AST:
+        self.generic_visit(node)
+        node.test = self._maybe_encode(node.test)
+        return node
+
+    def visit_IfExp(self, node: ast.IfExp) -> ast.AST:
+        self.generic_visit(node)
+        node.test = self._maybe_encode(node.test)
+        return node
+
+    def visit_Assert(self, node: ast.Assert) -> ast.AST:
+        self.generic_visit(node)
+        node.test = self._maybe_encode(node.test)
+        return node
+
+
+class LoopEncoder(ast.NodeTransformer):
+    def __init__(self, rng: random.Random, mode: str, rate: float, used_names: set[str]) -> None:
+        self.rng = rng
+        self.mode = mode
+        self.rate = max(0.0, min(1.0, rate))
+        self.generator = NameGenerator(used_names)
+        self.changed = 0
+
+    def _use_guard_mode(self) -> bool:
+        if self.mode == "guard":
+            return True
+        if self.mode == "iterator":
+            return False
+        return self.rng.choice((True, False))
+
+    def _is_encoded_guard_while(self, node: ast.While) -> bool:
+        if not (isinstance(node.test, ast.Constant) and node.test.value is True):
+            return False
+        if not node.body or not isinstance(node.body[0], ast.If):
+            return False
+        head = node.body[0]
+        if len(head.body) != 1 or not isinstance(head.body[0], ast.Break):
+            return False
+        if not isinstance(head.test, ast.UnaryOp) or not isinstance(head.test.op, ast.Not):
+            return False
+        return True
+
+    def visit_While(self, node: ast.While) -> ast.AST:
+        self.generic_visit(node)
+        if self.rng.random() > self.rate:
+            return node
+        if not self._use_guard_mode():
+            return node
+        if node.orelse:
+            return node
+        if self._is_encoded_guard_while(node):
+            return node
+
+        guard = ast.If(
+            test=ast.UnaryOp(op=ast.Not(), operand=node.test),
+            body=[ast.Break()],
+            orelse=[],
+        )
+        node.test = ast.Constant(True)
+        node.body = [guard, *node.body]
+        self.changed += 1
+        return node
+
+    def visit_For(self, node: ast.For) -> ast.AST:
+        self.generic_visit(node)
+        if self.rng.random() > self.rate:
+            return node
+        if self._use_guard_mode():
+            return node
+        if node.orelse:
+            return node
+
+        sentinel_name = self.generator.next_name()
+        iter_name = self.generator.next_name()
+        value_name = self.generator.next_name()
+
+        sentinel_assign = ast.Assign(
+            targets=[ast.Name(id=sentinel_name, ctx=ast.Store())],
+            value=ast.Call(func=ast.Name(id="object", ctx=ast.Load()), args=[], keywords=[]),
+        )
+        iter_assign = ast.Assign(
+            targets=[ast.Name(id=iter_name, ctx=ast.Store())],
+            value=ast.Call(func=ast.Name(id="iter", ctx=ast.Load()), args=[node.iter], keywords=[]),
+        )
+        pull_assign = ast.Assign(
+            targets=[ast.Name(id=value_name, ctx=ast.Store())],
+            value=ast.Call(
+                func=ast.Name(id="next", ctx=ast.Load()),
+                args=[ast.Name(id=iter_name, ctx=ast.Load()), ast.Name(id=sentinel_name, ctx=ast.Load())],
+                keywords=[],
+            ),
+        )
+        stop_if = ast.If(
+            test=ast.Compare(
+                left=ast.Name(id=value_name, ctx=ast.Load()),
+                ops=[ast.Is()],
+                comparators=[ast.Name(id=sentinel_name, ctx=ast.Load())],
+            ),
+            body=[ast.Break()],
+            orelse=[],
+        )
+        assign_target = ast.Assign(
+            targets=[copy.deepcopy(node.target)],
+            value=ast.Name(id=value_name, ctx=ast.Load()),
+        )
+        while_node = ast.While(
+            test=ast.Constant(True),
+            body=[pull_assign, stop_if, assign_target, *node.body],
+            orelse=[],
+        )
+        self.changed += 1
+        return [
+            ast.copy_location(sentinel_assign, node),
+            ast.copy_location(iter_assign, node),
+            ast.copy_location(while_node, node),
+        ]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="AST-based Python obfuscator")
     parser.add_argument("input", type=Path, help="Input .py file")
@@ -1332,7 +1901,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--call-mode",
-        choices=("mixed", "wrap", "lambda", "eval"),
+        choices=("mixed", "wrap", "lambda", "factory", "eval"),
         default="mixed",
         help="Call replacement style",
     )
@@ -1347,6 +1916,24 @@ def parse_args() -> argparse.Namespace:
         choices=("mixed", "alias", "getattr", "globals"),
         default="mixed",
         help="Builtin alias resolution style",
+    )
+    parser.add_argument(
+        "--import-mode",
+        choices=("mixed", "importlib", "builtins", "dunder"),
+        default="mixed",
+        help="Import statement replacement style",
+    )
+    parser.add_argument(
+        "--condition-mode",
+        choices=("mixed", "double_not", "ifexp", "bool_call", "lambda_call", "tuple_pick"),
+        default="mixed",
+        help="Conditional expression encoding style",
+    )
+    parser.add_argument(
+        "--loop-mode",
+        choices=("mixed", "guard", "iterator"),
+        default="mixed",
+        help="Loop encoding style",
     )
     parser.add_argument(
         "--attr-mode",
@@ -1367,6 +1954,10 @@ def parse_args() -> argparse.Namespace:
         help="String obfuscation style",
     )
     parser.add_argument("--flow-rate", type=float, default=1.0, help="0.0-1.0 chance to inject per function")
+    parser.add_argument("--import-rate", type=float, default=1.0, help="0.0-1.0 chance to rewrite each import")
+    parser.add_argument("--condition-rate", type=float, default=1.0, help="0.0-1.0 chance to encode each condition")
+    parser.add_argument("--branch-rate", type=float, default=0.5, help="0.0-1.0 chance to extend each if-branch")
+    parser.add_argument("--loop-rate", type=float, default=1.0, help="0.0-1.0 chance to encode each loop")
     parser.add_argument("--attr-rate", type=float, default=1.0, help="0.0-1.0 chance to rewrite each attribute load")
     parser.add_argument("--setattr-rate", type=float, default=1.0, help="0.0-1.0 chance to rewrite attribute writes/deletes")
     parser.add_argument("--call-rate", type=float, default=1.0, help="0.0-1.0 chance to rewrite each function call")
@@ -1376,7 +1967,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--string-chunk-max", type=int, default=6, help="Maximum string chunk size")
     parser.add_argument(
         "--order",
-        default="attrs,setattrs,calls,bools,ints,floats,bytes,none,flow",
+        default="imports,attrs,setattrs,calls,conds,loops,bools,ints,floats,bytes,none,flow",
         help="Comma-separated per-pass transform order",
     )
     parser.add_argument(
@@ -1398,6 +1989,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--none", dest="none_values", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--bools", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--flow", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--imports", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--conditions", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument("--loops", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--attrs", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--setattrs", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--calls", action=argparse.BooleanOptionalAction, default=None)
@@ -1450,6 +2044,9 @@ def default_features(level: int) -> dict[str, int | bool]:
             "none_values": False,
             "bools": False,
             "flow": False,
+            "imports": False,
+            "conditions": False,
+            "loops": False,
             "attrs": False,
             "setattrs": False,
             "calls": False,
@@ -1467,6 +2064,9 @@ def default_features(level: int) -> dict[str, int | bool]:
             "none_values": False,
             "bools": False,
             "flow": False,
+            "imports": False,
+            "conditions": False,
+            "loops": False,
             "attrs": False,
             "setattrs": False,
             "calls": False,
@@ -1484,6 +2084,9 @@ def default_features(level: int) -> dict[str, int | bool]:
             "none_values": True,
             "bools": False,
             "flow": True,
+            "imports": True,
+            "conditions": True,
+            "loops": False,
             "attrs": False,
             "setattrs": True,
             "calls": False,
@@ -1501,6 +2104,9 @@ def default_features(level: int) -> dict[str, int | bool]:
             "none_values": True,
             "bools": True,
             "flow": True,
+            "imports": True,
+            "conditions": True,
+            "loops": True,
             "attrs": True,
             "setattrs": True,
             "calls": True,
@@ -1518,6 +2124,9 @@ def default_features(level: int) -> dict[str, int | bool]:
             "none_values": True,
             "bools": True,
             "flow": True,
+            "imports": True,
+            "conditions": True,
+            "loops": True,
             "attrs": True,
             "setattrs": True,
             "calls": True,
@@ -1541,6 +2150,9 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "none_values": True,
             "bools": True,
             "flow": True,
+            "imports": True,
+            "conditions": True,
+            "loops": True,
             "attrs": True,
             "setattrs": True,
             "calls": True,
@@ -1549,11 +2161,15 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "junk": 1,
             "wrap": False,
             "dynamic_level": "medium",
+            "import_rate": 0.8,
             "attr_rate": 0.75,
             "setattr_rate": 0.8,
             "call_rate": 0.65,
             "builtin_rate": 0.9,
             "flow_rate": 0.75,
+            "condition_rate": 0.8,
+            "branch_rate": 0.45,
+            "loop_rate": 0.65,
             "flow_count": 1,
         },
         "stealth": {
@@ -1565,6 +2181,9 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "none_values": True,
             "bools": True,
             "flow": True,
+            "imports": False,
+            "conditions": True,
+            "loops": False,
             "attrs": True,
             "setattrs": True,
             "calls": True,
@@ -1573,11 +2192,15 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "junk": 0,
             "wrap": False,
             "dynamic_level": "safe",
+            "import_rate": 0.35,
             "attr_rate": 0.45,
             "setattr_rate": 0.45,
             "call_rate": 0.4,
             "builtin_rate": 0.6,
             "flow_rate": 0.35,
+            "condition_rate": 0.4,
+            "branch_rate": 0.2,
+            "loop_rate": 0.25,
             "flow_count": 1,
         },
         "max": {
@@ -1589,6 +2212,9 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "none_values": True,
             "bools": True,
             "flow": True,
+            "imports": True,
+            "conditions": True,
+            "loops": True,
             "attrs": True,
             "setattrs": True,
             "calls": True,
@@ -1597,11 +2223,15 @@ def profile_defaults(profile: str) -> dict[str, int | bool | float | str]:
             "junk": 4,
             "wrap": True,
             "dynamic_level": "heavy",
+            "import_rate": 1.0,
             "attr_rate": 1.0,
             "setattr_rate": 1.0,
             "call_rate": 1.0,
             "builtin_rate": 1.0,
             "flow_rate": 1.0,
+            "condition_rate": 1.0,
+            "branch_rate": 0.8,
+            "loop_rate": 1.0,
             "flow_count": 2,
         },
     }
@@ -1679,6 +2309,7 @@ def apply_explicit_method_mode(config_methods: dict[str, set[str]], args: argpar
     call_map = {
         "wrap": ("helper_wrap",),
         "lambda": ("lambda_wrap",),
+        "factory": ("factory_lambda_call",),
         "eval": ("builtins_eval_call",),
     }
     if args.call_mode in call_map:
@@ -1691,6 +2322,14 @@ def apply_explicit_method_mode(config_methods: dict[str, set[str]], args: argpar
     }
     if args.builtin_mode in builtin_map:
         config_methods["builtin"] = set(builtin_map[args.builtin_mode])
+
+    import_map = {
+        "importlib": ("importlib_import_module",),
+        "builtins": ("builtins_import",),
+        "dunder": ("dunder_import_module",),
+    }
+    if args.import_mode in import_map:
+        config_methods["import"] = set(import_map[args.import_mode])
 
 
 def parse_transform_order(raw: str) -> tuple[str, ...]:
@@ -1726,6 +2365,11 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
     )
     bools = bool(prof.get("bools", base["bools"]) if args.bools is None else args.bools)
     flow = bool(prof.get("flow", base["flow"]) if args.flow is None else args.flow)
+    imports = bool(prof.get("imports", base["imports"]) if args.imports is None else args.imports)
+    conditions = bool(
+        prof.get("conditions", base["conditions"]) if args.conditions is None else args.conditions
+    )
+    loops = bool(prof.get("loops", base["loops"]) if args.loops is None else args.loops)
     attrs = bool(prof.get("attrs", base["attrs"]) if args.attrs is None else args.attrs)
     setattrs = bool(prof.get("setattrs", base["setattrs"]) if args.setattrs is None else args.setattrs)
     calls = bool(prof.get("calls", base["calls"]) if args.calls is None else args.calls)
@@ -1755,6 +2399,10 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
     default_dynamic_level = str(prof.get("dynamic_level", args.dynamic_level))
     dynamic_level = default_dynamic_level
 
+    import_rate = float(prof.get("import_rate", args.import_rate))
+    condition_rate = float(prof.get("condition_rate", args.condition_rate))
+    branch_rate = float(prof.get("branch_rate", args.branch_rate))
+    loop_rate = float(prof.get("loop_rate", args.loop_rate))
     attr_rate = float(prof.get("attr_rate", args.attr_rate))
     setattr_rate = float(prof.get("setattr_rate", args.setattr_rate))
     call_rate = float(prof.get("call_rate", args.call_rate))
@@ -1764,6 +2412,14 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
     flow_count = flow_count_default
 
     # Explicit numeric CLI flags override profile defaults.
+    if "--import-rate" in sys.argv:
+        import_rate = args.import_rate
+    if "--condition-rate" in sys.argv:
+        condition_rate = args.condition_rate
+    if "--branch-rate" in sys.argv:
+        branch_rate = args.branch_rate
+    if "--loop-rate" in sys.argv:
+        loop_rate = args.loop_rate
     if "--attr-rate" in sys.argv:
         attr_rate = args.attr_rate
     if "--setattr-rate" in sys.argv:
@@ -1779,6 +2435,14 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
     if "--dynamic-level" in sys.argv:
         dynamic_level = args.dynamic_level
 
+    if import_rate < 0.0 or import_rate > 1.0:
+        raise ValueError("--import-rate must be between 0.0 and 1.0")
+    if condition_rate < 0.0 or condition_rate > 1.0:
+        raise ValueError("--condition-rate must be between 0.0 and 1.0")
+    if branch_rate < 0.0 or branch_rate > 1.0:
+        raise ValueError("--branch-rate must be between 0.0 and 1.0")
+    if loop_rate < 0.0 or loop_rate > 1.0:
+        raise ValueError("--loop-rate must be between 0.0 and 1.0")
     if flow_rate < 0.0 or flow_rate > 1.0:
         raise ValueError("--flow-rate must be between 0.0 and 1.0")
     if attr_rate < 0.0 or attr_rate > 1.0:
@@ -1831,6 +2495,9 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         none_values=none_values,
         bools=bools,
         flow=flow,
+        imports=imports,
+        conditions=conditions,
+        loops=loops,
         attrs=attrs,
         setattrs=setattrs,
         calls=calls,
@@ -1847,8 +2514,15 @@ def resolve_config(args: argparse.Namespace) -> ObfuscationConfig:
         call_mode=args.call_mode,
         setattr_mode=args.setattr_mode,
         builtin_mode=args.builtin_mode,
+        import_mode=args.import_mode,
+        condition_mode=args.condition_mode,
+        loop_mode=args.loop_mode,
         attr_mode=args.attr_mode,
+        import_rate=import_rate,
         flow_rate=flow_rate,
+        condition_rate=condition_rate,
+        branch_rate=branch_rate,
+        loop_rate=loop_rate,
         attr_rate=attr_rate,
         setattr_rate=setattr_rate,
         call_rate=call_rate,
@@ -2112,7 +2786,17 @@ def obfuscate_source(
 
     for _ in range(config.passes):
         for transform in config.transform_order:
-            if transform == "attrs" and config.attrs:
+            if transform == "imports" and config.imports:
+                import_obf = ImportObfuscator(
+                    rng,
+                    config.import_mode,
+                    config.import_rate,
+                    config.dynamic_methods["import"],
+                    collect_identifiers(tree),
+                )
+                tree = import_obf.visit(tree)
+                stats.imports += import_obf.changed
+            elif transform == "attrs" and config.attrs:
                 attr_obf = AttributeLoadObfuscator(
                     rng,
                     config.preserve_attrs,
@@ -2142,6 +2826,25 @@ def obfuscate_source(
                 )
                 tree = call_obf.visit(tree)
                 stats.calls += call_obf.changed
+            elif transform == "conds" and config.conditions:
+                cond_obf = ConditionObfuscator(
+                    rng,
+                    config.condition_mode,
+                    config.condition_rate,
+                    config.branch_rate,
+                )
+                tree = cond_obf.visit(tree)
+                stats.conditions += cond_obf.changed
+                stats.branch_extensions += cond_obf.branch_extended
+            elif transform == "loops" and config.loops:
+                loop_obf = LoopEncoder(
+                    rng,
+                    config.loop_mode,
+                    config.loop_rate,
+                    collect_identifiers(tree),
+                )
+                tree = loop_obf.visit(tree)
+                stats.loops += loop_obf.changed
             elif transform == "bools" and config.bools:
                 bool_obf = BoolObfuscator(rng, config.bool_mode)
                 tree = bool_obf.visit(tree)
@@ -2242,6 +2945,9 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
             "none": config.none_values,
             "bools": config.bools,
             "flow": config.flow,
+            "imports": config.imports,
+            "conditions": config.conditions,
+            "loops": config.loops,
             "attrs": config.attrs,
             "setattrs": config.setattrs,
             "calls": config.calls,
@@ -2249,11 +2955,15 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
             "wrap": config.wrap,
         },
         "rates": {
+            "import_rate": config.import_rate,
             "attr_rate": config.attr_rate,
             "setattr_rate": config.setattr_rate,
             "call_rate": config.call_rate,
             "builtin_rate": config.builtin_rate,
             "flow_rate": config.flow_rate,
+            "condition_rate": config.condition_rate,
+            "branch_rate": config.branch_rate,
+            "loop_rate": config.loop_rate,
         },
         "dynamic_methods": {k: list(v) for k, v in config.dynamic_methods.items()},
         "junk": {"count": config.junk, "position": config.junk_position},
@@ -2270,9 +2980,16 @@ def config_to_meta(config: ObfuscationConfig) -> dict[str, object]:
         "call_mode": config.call_mode,
         "setattr_mode": config.setattr_mode,
         "builtin_mode": config.builtin_mode,
+        "import_mode": config.import_mode,
+        "condition_mode": config.condition_mode,
+        "loop_mode": config.loop_mode,
         "attr_mode": config.attr_mode,
+        "import_rate": config.import_rate,
         "attr_rate": config.attr_rate,
         "flow_rate": config.flow_rate,
+        "condition_rate": config.condition_rate,
+        "branch_rate": config.branch_rate,
+        "loop_rate": config.loop_rate,
         "flow_count": config.flow_count,
         "order": list(config.transform_order),
         "seed": config.seed,
@@ -2288,6 +3005,10 @@ def stats_to_meta(stats: ObfuscationStats) -> dict[str, int]:
         "bytes": stats.bytes_,
         "none": stats.none_values,
         "bools": stats.bools,
+        "imports": stats.imports,
+        "conditions": stats.conditions,
+        "branch_extensions": stats.branch_extensions,
+        "loops": stats.loops,
         "flow_blocks": stats.flow_blocks,
         "attrs": stats.attrs,
         "setattrs": stats.setattrs,
@@ -2324,6 +3045,374 @@ def write_obfumeta(path: Path, meta: dict[str, object]) -> None:
     path.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def is_identifier_name(text: str) -> bool:
+    return bool(text) and text.isidentifier() and not keyword.iskeyword(text)
+
+
+def is_builtin_import_call(node: ast.AST, module_name: str) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "__import__"
+        and len(node.args) >= 1
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value == module_name
+    )
+
+
+def call_kind(func: ast.AST) -> str | None:
+    if isinstance(func, ast.Name) and func.id in {"getattr", "setattr", "delattr"}:
+        return func.id
+    if isinstance(func, ast.Attribute) and func.attr in {"getattr", "setattr", "delattr"}:
+        if is_builtin_import_call(func.value, "builtins"):
+            return func.attr
+    if isinstance(func, ast.Lambda):
+        if len(func.args.args) == 2 and isinstance(func.body, ast.Call):
+            arg0 = func.args.args[0].arg
+            arg1 = func.args.args[1].arg
+            if (
+                isinstance(func.body.func, ast.Name)
+                and func.body.func.id in {"getattr", "delattr"}
+                and len(func.body.args) == 2
+                and isinstance(func.body.args[0], ast.Name)
+                and isinstance(func.body.args[1], ast.Name)
+                and func.body.args[0].id == arg0
+                and func.body.args[1].id == arg1
+            ):
+                return func.body.func.id
+        if len(func.args.args) == 3 and isinstance(func.body, ast.Call):
+            arg0 = func.args.args[0].arg
+            arg1 = func.args.args[1].arg
+            arg2 = func.args.args[2].arg
+            if (
+                isinstance(func.body.func, ast.Name)
+                and func.body.func.id == "setattr"
+                and len(func.body.args) == 3
+                and isinstance(func.body.args[0], ast.Name)
+                and isinstance(func.body.args[1], ast.Name)
+                and isinstance(func.body.args[2], ast.Name)
+                and func.body.args[0].id == arg0
+                and func.body.args[1].id == arg1
+                and func.body.args[2].id == arg2
+            ):
+                return "setattr"
+    return None
+
+
+def extract_import_module_name(expr: ast.AST) -> str | None:
+    if not isinstance(expr, ast.Call):
+        return None
+    if isinstance(expr.func, ast.Name) and expr.func.id == "__import__" and expr.args:
+        return decode_obf_text_expr(expr.args[0])
+    if (
+        isinstance(expr.func, ast.Attribute)
+        and expr.func.attr == "import_module"
+        and is_builtin_import_call(expr.func.value, "importlib")
+        and expr.args
+    ):
+        return decode_obf_text_expr(expr.args[0])
+    if (
+        isinstance(expr.func, ast.Call)
+        and isinstance(expr.func.func, ast.Name)
+        and expr.func.func.id == "getattr"
+        and len(expr.func.args) >= 2
+        and is_builtin_import_call(expr.func.args[0], "importlib")
+        and decode_obf_text_expr(expr.func.args[1]) == "import_module"
+        and expr.args
+    ):
+        return decode_obf_text_expr(expr.args[0])
+    return None
+
+
+def call_triplet_to_call(node: ast.Call) -> ast.Call | None:
+    if len(node.args) != 3:
+        return None
+    fn_expr = node.args[0]
+    args_expr = node.args[1]
+    kwargs_expr = node.args[2]
+    if not isinstance(args_expr, ast.Tuple) or not isinstance(kwargs_expr, ast.Dict):
+        return None
+    keywords: list[ast.keyword] = []
+    for key, val in zip(kwargs_expr.keys, kwargs_expr.values):
+        if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+            return None
+        keywords.append(ast.keyword(arg=key.value, value=val))
+    return ast.Call(func=fn_expr, args=list(args_expr.elts), keywords=keywords)
+
+
+def is_triplet_wrapper_lambda(func: ast.AST) -> bool:
+    if not isinstance(func, ast.Lambda):
+        return False
+    if len(func.args.args) != 3 or not isinstance(func.body, ast.Call):
+        return False
+    f_name = func.args.args[0].arg
+    a_name = func.args.args[1].arg
+    k_name = func.args.args[2].arg
+    body = func.body
+    if body.args and len(body.args) == 1 and isinstance(body.args[0], ast.Starred):
+        arg_star = body.args[0].value
+        kw_ok = (
+            len(body.keywords) == 1
+            and body.keywords[0].arg is None
+            and isinstance(body.keywords[0].value, ast.Name)
+            and body.keywords[0].value.id == k_name
+        )
+        if (
+            isinstance(arg_star, ast.Name)
+            and arg_star.id == a_name
+            and kw_ok
+            and isinstance(body.func, ast.Name)
+            and body.func.id == f_name
+        ):
+            return True
+        if (
+            isinstance(body.func, ast.Lambda)
+            and body.func.args.vararg is not None
+            and body.func.args.kwarg is not None
+            and isinstance(body.func.body, ast.Call)
+            and isinstance(body.func.body.func, ast.Name)
+            and body.func.body.func.id == f_name
+            and len(body.func.body.args) == 1
+            and isinstance(body.func.body.args[0], ast.Starred)
+            and isinstance(body.func.body.args[0].value, ast.Name)
+            and body.func.body.args[0].value.id == body.func.args.vararg.arg
+            and len(body.func.body.keywords) == 1
+            and body.func.body.keywords[0].arg is None
+            and isinstance(body.func.body.keywords[0].value, ast.Name)
+            and body.func.body.keywords[0].value.id == body.func.args.kwarg.arg
+        ):
+            return True
+    return False
+
+
+class BestEffortDeobfuscator(ast.NodeTransformer):
+    def __init__(self) -> None:
+        self.changes = 0
+
+    def _decode_string_helper(self, node: ast.Call) -> ast.expr | None:
+        if not (isinstance(node.func, ast.Name) and node.func.id.startswith("_obf_str")):
+            return None
+        if len(node.args) != 2:
+            return None
+        if not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, int):
+            return None
+        mode = node.args[0].value
+        payload = node.args[1]
+        if mode == 1 and isinstance(payload, ast.Constant) and isinstance(payload.value, str):
+            try:
+                self.changes += 1
+                return ast.Constant(base64.b85decode(payload.value.encode("ascii")).decode("utf-8"))
+            except Exception:
+                return None
+        if mode == 2 and isinstance(payload, ast.Constant) and isinstance(payload.value, str):
+            self.changes += 1
+            return ast.Constant(payload.value[::-1])
+        if mode == 0 and isinstance(payload, ast.Tuple):
+            chars: list[str] = []
+            for entry in payload.elts:
+                if (
+                    not isinstance(entry, ast.Tuple)
+                    or len(entry.elts) != 2
+                    or not isinstance(entry.elts[0], ast.Constant)
+                    or not isinstance(entry.elts[0].value, int)
+                    or not isinstance(entry.elts[1], ast.Tuple)
+                ):
+                    return None
+                key = entry.elts[0].value
+                for v in entry.elts[1].elts:
+                    if not isinstance(v, ast.Constant) or not isinstance(v.value, int):
+                        return None
+                    chars.append(chr(v.value ^ key))
+            self.changes += 1
+            return ast.Constant("".join(chars))
+        return None
+
+    def _decode_triplet_call(self, node: ast.Call) -> ast.expr | None:
+        if isinstance(node.func, ast.Name) and node.func.id.startswith("_obf_call"):
+            rebuilt = call_triplet_to_call(node)
+            if rebuilt is not None:
+                self.changes += 1
+            return rebuilt
+        if is_triplet_wrapper_lambda(node.func):
+            rebuilt = call_triplet_to_call(node)
+            if rebuilt is not None:
+                self.changes += 1
+            return rebuilt
+        if (
+            isinstance(node.func, ast.Call)
+            and isinstance(node.func.func, ast.Name)
+            and node.func.func.id == "eval"
+            and len(node.func.args) == 1
+            and isinstance(node.func.args[0], ast.Constant)
+            and isinstance(node.func.args[0].value, str)
+            and "lambda f,a,k: f(*a, **k)" in node.func.args[0].value
+        ):
+            rebuilt = call_triplet_to_call(node)
+            if rebuilt is not None:
+                self.changes += 1
+            return rebuilt
+        return None
+
+    def visit_Call(self, node: ast.Call) -> ast.AST:
+        self.generic_visit(node)
+        string_restored = self._decode_string_helper(node)
+        if string_restored is not None:
+            return ast.copy_location(string_restored, node)
+        rebuilt_call = self._decode_triplet_call(node)
+        if rebuilt_call is not None:
+            return ast.copy_location(rebuilt_call, node)
+        kind = call_kind(node.func)
+        if kind == "getattr" and len(node.args) == 2:
+            attr = decode_obf_text_expr(node.args[1])
+            if attr is not None and is_identifier_name(attr):
+                self.changes += 1
+                return ast.copy_location(ast.Attribute(value=node.args[0], attr=attr, ctx=ast.Load()), node)
+        return node
+
+    def visit_Expr(self, node: ast.Expr) -> ast.AST:
+        self.generic_visit(node)
+        if not isinstance(node.value, ast.Call):
+            return node
+        kind = call_kind(node.value.func)
+        if kind == "setattr" and len(node.value.args) == 3:
+            attr = decode_obf_text_expr(node.value.args[1])
+            if attr is not None and is_identifier_name(attr):
+                self.changes += 1
+                return ast.copy_location(
+                    ast.Assign(
+                        targets=[ast.Attribute(value=node.value.args[0], attr=attr, ctx=ast.Store())],
+                        value=node.value.args[2],
+                    ),
+                    node,
+                )
+        if kind == "delattr" and len(node.value.args) == 2:
+            attr = decode_obf_text_expr(node.value.args[1])
+            if attr is not None and is_identifier_name(attr):
+                self.changes += 1
+                return ast.copy_location(
+                    ast.Delete(targets=[ast.Attribute(value=node.value.args[0], attr=attr, ctx=ast.Del())]),
+                    node,
+                )
+        return node
+
+
+def rewrite_import_assignments_in_tree(tree: ast.AST) -> int:
+    changed = 0
+
+    def _extract_getattr_from_module_ref(stmt: ast.stmt, module_ref: str) -> tuple[str, str] | None:
+        if not (
+            isinstance(stmt, ast.Assign)
+            and len(stmt.targets) == 1
+            and isinstance(stmt.targets[0], ast.Name)
+            and isinstance(stmt.value, ast.Call)
+            and call_kind(stmt.value.func) == "getattr"
+            and len(stmt.value.args) == 2
+            and isinstance(stmt.value.args[0], ast.Name)
+            and stmt.value.args[0].id == module_ref
+        ):
+            return None
+        attr = decode_obf_text_expr(stmt.value.args[1])
+        if attr is None or not is_identifier_name(attr):
+            return None
+        return (stmt.targets[0].id, attr)
+
+    def _rewrite_body(body: list[ast.stmt]) -> list[ast.stmt]:
+        nonlocal changed
+        # Recurse first.
+        for stmt in body:
+            _rewrite_stmt_children(stmt)
+
+        out: list[ast.stmt] = []
+        i = 0
+        while i < len(body):
+            stmt = body[i]
+            # Pattern 1: tmp = import(...); a = getattr(tmp, "..."); b = getattr(tmp, "...")
+            if (
+                isinstance(stmt, ast.Assign)
+                and len(stmt.targets) == 1
+                and isinstance(stmt.targets[0], ast.Name)
+            ):
+                module_name = extract_import_module_name(stmt.value)
+                if module_name is not None:
+                    target_name = stmt.targets[0].id
+                    aliases: list[ast.alias] = []
+                    j = i + 1
+                    while j < len(body):
+                        pair = _extract_getattr_from_module_ref(body[j], target_name)
+                        if pair is None:
+                            break
+                        bound_name, attr_name = pair
+                        aliases.append(ast.alias(name=attr_name, asname=(bound_name if bound_name != attr_name else None)))
+                        j += 1
+                    if aliases:
+                        changed += 1
+                        out.append(
+                            ast.copy_location(
+                                ast.ImportFrom(module=module_name, names=aliases, level=0),
+                                stmt,
+                            )
+                        )
+                        i = j
+                        continue
+                    changed += 1
+                    asname = target_name if target_name != module_name.split(".")[0] else None
+                    out.append(
+                        ast.copy_location(
+                            ast.Import(names=[ast.alias(name=module_name, asname=asname)]),
+                            stmt,
+                        )
+                    )
+                    i += 1
+                    continue
+            # Pattern 2: x = getattr(import(...), "name")
+            if (
+                isinstance(stmt, ast.Assign)
+                and len(stmt.targets) == 1
+                and isinstance(stmt.targets[0], ast.Name)
+                and isinstance(stmt.value, ast.Call)
+                and call_kind(stmt.value.func) == "getattr"
+                and len(stmt.value.args) == 2
+            ):
+                module_name = extract_import_module_name(stmt.value.args[0])
+                attr_name = decode_obf_text_expr(stmt.value.args[1])
+                if (
+                    module_name is not None
+                    and attr_name is not None
+                    and is_identifier_name(attr_name)
+                ):
+                    changed += 1
+                    asname = stmt.targets[0].id if stmt.targets[0].id != attr_name else None
+                    out.append(
+                        ast.copy_location(
+                            ast.ImportFrom(
+                                module=module_name,
+                                names=[ast.alias(name=attr_name, asname=asname)],
+                                level=0,
+                            ),
+                            stmt,
+                        )
+                    )
+                    i += 1
+                    continue
+
+            out.append(stmt)
+            i += 1
+        return out
+
+    def _rewrite_stmt_children(stmt: ast.stmt) -> None:
+        for attr in ("body", "orelse", "finalbody"):
+            value = getattr(stmt, attr, None)
+            if isinstance(value, list):
+                setattr(stmt, attr, _rewrite_body(value))
+        if isinstance(stmt, ast.Try):
+            for handler in stmt.handlers:
+                handler.body = _rewrite_body(handler.body)
+
+    if isinstance(tree, ast.Module):
+        tree.body = _rewrite_body(tree.body)
+    return changed
+
+
 def deobfuscate_with_meta(
     obfuscated_source: str,
     meta_path: Path,
@@ -2348,20 +3437,28 @@ def deobfuscate_with_meta(
         return decode_source_payload(payload), warnings
 
     raw_map = meta.get("rename_map")
+    tree = ast.parse(obfuscated_source)
     if isinstance(raw_map, dict):
         reverse_map = {str(v): str(k) for k, v in raw_map.items()}
-        tree = ast.parse(obfuscated_source)
-        restored = Renamer(reverse_map).visit(tree)
-        ast.fix_missing_locations(restored)
-        warnings.append("best-effort restore: applied rename map only; other transforms may remain")
-        if mode == "strict":
-            raise ValueError("Strict mode requires source payload in metadata")
-        return ast.unparse(restored), warnings
-
+        tree = Renamer(reverse_map).visit(tree)
+    simplifier = BestEffortDeobfuscator()
+    tree = simplifier.visit(tree)
+    import_changes = rewrite_import_assignments_in_tree(tree)
+    ast.fix_missing_locations(tree)
     if mode == "strict":
         raise ValueError("Strict mode requires source payload in metadata")
-    warnings.append("best-effort restore unavailable: returning obfuscated source")
-    return obfuscated_source, warnings
+    warn_bits: list[str] = []
+    if isinstance(raw_map, dict):
+        warn_bits.append("rename-map")
+    if simplifier.changes:
+        warn_bits.append(f"ast-simplify={simplifier.changes}")
+    if import_changes:
+        warn_bits.append(f"import-rebuild={import_changes}")
+    if warn_bits:
+        warnings.append("best-effort restore applied: " + ", ".join(warn_bits))
+    else:
+        warnings.append("best-effort restore: no reversible patterns detected")
+    return ast.unparse(tree), warnings
 
 
 def explain_config(config: ObfuscationConfig) -> None:
@@ -2373,9 +3470,12 @@ def explain_config(config: ObfuscationConfig) -> None:
         f"int_mode={config.int_mode}, float_mode={config.float_mode}, "
         f"bytes_mode={config.bytes_mode}, bool_mode={config.bool_mode}, none_mode={config.none_mode}, "
         f"call_mode={config.call_mode}, setattr_mode={config.setattr_mode}, builtin_mode={config.builtin_mode}, "
-        f"attr_mode={config.attr_mode}, attr_rate={config.attr_rate:.2f}, "
+        f"import_mode={config.import_mode}, cond_mode={config.condition_mode}, loop_mode={config.loop_mode}, "
+        f"attr_mode={config.attr_mode}, import_rate={config.import_rate:.2f}, attr_rate={config.attr_rate:.2f}, "
         f"setattr_rate={config.setattr_rate:.2f}, call_rate={config.call_rate:.2f}, "
-        f"builtin_rate={config.builtin_rate:.2f}, flow_rate={config.flow_rate:.2f}, flow_count={config.flow_count}, "
+        f"builtin_rate={config.builtin_rate:.2f}, flow_rate={config.flow_rate:.2f}, "
+        f"cond_rate={config.condition_rate:.2f}, branch_rate={config.branch_rate:.2f}, "
+        f"loop_rate={config.loop_rate:.2f}, flow_count={config.flow_count}, "
         f"str_chunks={config.string_chunk_min}-{config.string_chunk_max}"
     )
     print(
@@ -2440,13 +3540,15 @@ def main() -> int:
         f"features(profile={config.profile}, dynamic={config.dynamic_level}, "
         f"rename={config.rename}, strings={config.strings}, ints={config.ints}, "
         f"floats={config.floats}, bytes={config.bytes_}, none={config.none_values}, "
-        f"bools={config.bools}, flow={config.flow}, attrs={config.attrs}, "
+        f"bools={config.bools}, imports={config.imports}, conds={config.conditions}, "
+        f"loops={config.loops}, flow={config.flow}, attrs={config.attrs}, "
         f"setattrs={config.setattrs}, calls={config.calls}, builtins={config.builtins}, "
         f"wrap={config.wrap}, "
         f"order={','.join(config.transform_order)}) | "
         f"stats(renamed={stats.renamed}, strings={stats.strings}, ints={stats.ints}, "
         f"floats={stats.floats}, bytes={stats.bytes_}, none={stats.none_values}, "
-        f"bools={stats.bools}, dead_blocks={stats.flow_blocks}, attrs={stats.attrs}, "
+        f"bools={stats.bools}, imports={stats.imports}, conds={stats.conditions}, "
+        f"branches={stats.branch_extensions}, loops={stats.loops}, dead_blocks={stats.flow_blocks}, attrs={stats.attrs}, "
         f"setattrs={stats.setattrs}, calls={stats.calls}, builtins={stats.builtins}, "
         f"junk={stats.junk_functions})"
     )

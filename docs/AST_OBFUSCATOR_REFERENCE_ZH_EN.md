@@ -13,6 +13,9 @@
 - 多级别/多配置混淆（`--level` + `--profile`）
 - 多类型字面量混淆（字符串、整数、浮点、bytes、None、bool）
 - 属性/调用/内建引用改写（`attrs/setattrs/calls/builtins`）
+- 导入语句混淆（`imports` / `importlib` 风格）
+- 条件与分支扩展（`conditions` + `branch-rate`）
+- 循环编码（`loops`）
 - 动态方法池（tier + allow/deny）
 - 元数据导出 `obfumeta` 与反混淆（`--deobfuscate`）
 
@@ -21,6 +24,9 @@
 - Multi-level/preset configuration (`--level` + `--profile`)
 - Type-specific literal obfuscation (string/int/float/bytes/None/bool)
 - Attribute/call/builtin rewriting (`attrs/setattrs/calls/builtins`)
+- Import obfuscation (`imports` / importlib-style runtime loading)
+- Condition encoding and branch extension (`conditions` + `branch-rate`)
+- Loop encoding (`loops`)
 - Dynamic method pools (tier + allow/deny)
 - Metadata export (`obfumeta`) and deobfuscation (`--deobfuscate`)
 
@@ -30,15 +36,15 @@
 
 ```bash
 # Obfuscate
-python3 /root/ast_obfuscator.py input.py -o output.py --profile balanced --check --explain
+python3 ast_obfuscator.py input.py -o output.py --profile balanced --check --explain
 
 # Emit metadata + rename map
-python3 /root/ast_obfuscator.py input.py -o output.py \
+python3 ast_obfuscator.py input.py -o output.py \
   --emit-map output.map.json \
   --emit-meta output.obfumeta.json
 
 # Deobfuscate using metadata
-python3 /root/ast_obfuscator.py output.py -o restored.py \
+python3 ast_obfuscator.py output.py -o restored.py \
   --deobfuscate --meta output.obfumeta.json --deobf-mode best-effort
 ```
 
@@ -70,7 +76,7 @@ Resolution order:
 - `--level {1,2,3,4,5}`
 - `--profile {balanced,stealth,max}`
 - `--passes N`
-- `--order attrs,setattrs,calls,bools,ints,floats,bytes,none,flow`
+- `--order imports,attrs,setattrs,calls,conds,loops,bools,ints,floats,bytes,none,flow`
 
 ### Dynamic method control
 - `--dynamic-level {safe,medium,heavy}`
@@ -85,6 +91,9 @@ Resolution order:
 - `--[no-]bytes`
 - `--[no-]none`
 - `--[no-]bools`
+- `--[no-]imports`
+- `--[no-]conditions`
+- `--[no-]loops`
 - `--[no-]flow`
 - `--[no-]attrs`
 - `--[no-]setattrs`
@@ -101,10 +110,17 @@ Resolution order:
 - `--none-mode {mixed,lambda,ifexpr}`
 - `--attr-mode {mixed,getattr,builtins,attrgetter,lambda}`
 - `--setattr-mode {mixed,setattr,builtins,lambda}`
-- `--call-mode {mixed,wrap,lambda,eval}`
+- `--call-mode {mixed,wrap,lambda,factory,eval}`
 - `--builtin-mode {mixed,alias,getattr,globals}`
+- `--import-mode {mixed,importlib,builtins,dunder}`
+- `--condition-mode {mixed,double_not,ifexp,bool_call,lambda_call,tuple_pick}`
+- `--loop-mode {mixed,guard,iterator}`
 
 ### Rates / density
+- `--import-rate 0.0..1.0`
+- `--condition-rate 0.0..1.0`
+- `--branch-rate 0.0..1.0`
+- `--loop-rate 0.0..1.0`
 - `--attr-rate 0.0..1.0`
 - `--setattr-rate 0.0..1.0`
 - `--call-rate 0.0..1.0`
@@ -127,14 +143,15 @@ Resolution order:
 ### Method families
 - `attr`: `getattr`, `builtins_getattr`, `operator_attrgetter`, `lambda_getattr`, `globals_getattr`, `locals_getattr`
 - `setattr`: `setattr`, `delattr`, `builtins_setattr`, `builtins_delattr`, `lambda_setattr`, `lambda_delattr`
-- `call`: `helper_wrap`, `lambda_wrap`, `builtins_eval_call`
+- `call`: `helper_wrap`, `lambda_wrap`, `factory_lambda_call`, `builtins_eval_call`
 - `builtin`: `alias`, `builtins_getattr_alias`, `globals_lookup`
+- `import`: `importlib_import_module`, `builtins_import`, `dunder_import_module`
 
 ### Risk policy
 - `builtins_eval_call` is treated as risky and requires explicit opt-in via `--dynamic-allow`.
 - 示例 / Example:
 ```bash
-python3 /root/ast_obfuscator.py in.py -o out.py \
+python3 ast_obfuscator.py in.py -o out.py \
   --dynamic-level heavy \
   --dynamic-allow call:builtins_eval_call
 ```
@@ -161,34 +178,34 @@ python3 /root/ast_obfuscator.py in.py -o out.py \
 
 ### A. 平衡强度（推荐）/ Balanced
 ```bash
-python3 /root/ast_obfuscator.py app.py -o app.obf.py \
+python3 ast_obfuscator.py app.py -o app.obf.py \
   --profile balanced --seed 1337 --check --explain
 ```
 
 ### B. 隐蔽低侵入 / Stealth
 ```bash
-python3 /root/ast_obfuscator.py app.py -o app.obf.py \
+python3 ast_obfuscator.py app.py -o app.obf.py \
   --profile stealth --flow-rate 0.2 --call-rate 0.25 --check
 ```
 
 ### C. 极限强度 / Max
 ```bash
-python3 /root/ast_obfuscator.py app.py -o app.obf.py \
+python3 ast_obfuscator.py app.py -o app.obf.py \
   --profile max --dynamic-level heavy --check --explain
 ```
 
 ### D. 指定 transform 顺序 / Custom order
 ```bash
-python3 /root/ast_obfuscator.py app.py -o app.obf.py \
+python3 ast_obfuscator.py app.py -o app.obf.py \
   --order attrs,calls,ints,floats,bytes,none,bools,setattrs,flow
 ```
 
 ### E. 元数据 + strict 还原 / strict restore
 ```bash
-python3 /root/ast_obfuscator.py app.py -o app.obf.py \
+python3 ast_obfuscator.py app.py -o app.obf.py \
   --emit-meta app.meta.json --meta-include-source
 
-python3 /root/ast_obfuscator.py app.obf.py -o app.restore.py \
+python3 ast_obfuscator.py app.obf.py -o app.restore.py \
   --deobfuscate --meta app.meta.json --deobf-mode strict
 ```
 
